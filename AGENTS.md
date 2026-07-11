@@ -19,3 +19,10 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 ### Coding standards
 
 Python and SQL conventions, hard rules, and planned tooling. See [`docs/coding-standards.md`](docs/coding-standards.md).
+
+### Git workflow
+
+- **`main`** is the integration branch on GitHub.
+- Feature work happens on topic branches (e.g. `feat/01-walking-skeleton`).
+- When asked to **commit and push**: commit on the current feature branch, push it, then **open a PR to `main`** via `gh pr create --base main --head <branch>` (reuse an existing PR if one is already open). Return the PR URL.
+- Do not push directly to `main` unless explicitly asked.
