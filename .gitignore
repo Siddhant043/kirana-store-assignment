@@ -8,6 +8,7 @@ build/
 
 # Environment
 .env
+.env.*
 
 # Tooling
 .mypy_cache/
@@ -22,3 +23,8 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# Agent
+.cursor
+.claude
+.agents
