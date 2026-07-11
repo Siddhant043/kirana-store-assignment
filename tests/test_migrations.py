@@ -36,4 +36,16 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
 
     assert asyncio.run(assert_table_exists())
 
+    async def assert_inventory_tables_exist() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            products = await table_exists(engine, "products")
+            aliases = await table_exists(engine, "aliases")
+            stock_ledger = await table_exists(engine, "stock_ledger")
+            return products and aliases and stock_ledger
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_inventory_tables_exist())
+
     command.upgrade(config, "head")
