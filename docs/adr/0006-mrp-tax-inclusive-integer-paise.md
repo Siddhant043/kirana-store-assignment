@@ -1,0 +1,3 @@
+# MRP is tax-inclusive; all money is integer paise; GST math lives in the tool layer
+
+MRP is treated as the tax-inclusive final price (Indian retail convention): per line, `taxable = mrp / (1 + slab)`, `gst = mrp - taxable`, split equally into CGST and SGST. This avoids the common bug of adding GST on top of MRP. All monetary values are stored and computed as integer paise for deterministic rounding: per-line tax is rounded half-up, summed, then a bill-level round-off line adjusts to the nearest rupee. The slab and HSN are grounded on the product row, and every calculation happens in a shared `pricing` module the billing tools call — never in the model.

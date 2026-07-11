@@ -1,0 +1,3 @@
+# Concurrency via ordered row locks, with an append-only stock ledger
+
+Every stock-mutating tool (`finalize_bill` decrement, `receive_stock` increment, `stock_adjustment`) opens a transaction and takes `SELECT ... FOR UPDATE` on the affected product rows before read-then-write, so the oversell check can't pass on a stale quantity. To avoid deadlocks when a bill touches multiple SKUs, rows are locked in a deterministic order (sorted by `product_id`). Alongside the mutable `products.quantity` fast-read column, every change appends a row to `stock_ledger` (`product_id`, `delta`, `reason`, `ref_id`, `balance_after`, `ts`) — the audit trail and the data source for stock-velocity analytics. Correctness is thus a property of the transaction design, not the prompt.

@@ -1,0 +1,3 @@
+# Idempotency: update_id dedup plus draft state-machine finalize
+
+Telegram redelivers updates, so idempotency is enforced in two independent layers. Layer 1: a `processed_updates` table keyed by Telegram `update_id`, written before the update enters the agent loop — redelivered updates are dropped at the edge. Layer 2: `finalize_bill` is idempotent by the draft's `open → finalized` state transition under `SELECT ... FOR UPDATE`; a finalize on an already-finalized draft returns the existing `bill_id` without touching stock. The state transition *is* the idempotency key, so no separate token is needed. Layer 1 covers transport redelivery; Layer 2 covers the model/loop retrying a tool call.

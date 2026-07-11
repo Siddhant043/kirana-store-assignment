@@ -1,0 +1,3 @@
+# Structural grounding: billing tools accept a product_id, never a name
+
+`add_line` (and every price-bearing operation) takes a `product_id`, not free text, so the model is structurally forced to resolve items through `find_product` first and cannot bill a hallucinated product or price. `find_product` is the grounding chokepoint: it fuzzy-matches via Postgres `pg_trgm` similarity over name/brand plus an `aliases` table, and returns a ranked candidate list with an `ambiguous` flag. On `ambiguous`, the skill instructions have the model ask the owner which product (e.g. "Aashirvaad 5kg or loose?") and re-query — disambiguation is model behavior driven by tool data, not a hardcoded branch. Prices, slabs and HSN always originate from the returned row.
