@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str
     anthropic_api_key: str
     database_url: str = "postgresql+asyncpg://kirana:kirana@localhost:5432/kirana"
-    claude_model_id: str = "claude-sonnet-4-5"
+    claude_model_id: str = "claude-sonnet-5"
 
 
 def load_settings() -> Settings:
