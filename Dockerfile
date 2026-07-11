@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
 
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev
 
 COPY alembic.ini ./
@@ -12,5 +12,6 @@ COPY alembic ./alembic
 COPY src ./src
 
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
-CMD ["uv", "run", "python", "-m", "src.main"]
+CMD ["uv", "run", "--no-dev", "python", "-m", "src.main"]

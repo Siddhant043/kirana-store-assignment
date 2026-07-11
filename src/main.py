@@ -43,7 +43,6 @@ def build_handler(settings: Settings) -> tuple[Bot, UpdateHandler]:
 
 
 async def run_bot(settings: Settings) -> None:
-    run_migrations(settings.database_url)
     bot, handler = build_handler(settings)
     dispatcher = Dispatcher()
 
@@ -61,6 +60,7 @@ async def run_bot(settings: Settings) -> None:
 def main() -> None:
     settings = load_settings()
     os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+    run_migrations(settings.database_url)
     try:
         asyncio.run(run_bot(settings))
     except KeyboardInterrupt:
