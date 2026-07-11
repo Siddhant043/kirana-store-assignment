@@ -1,7 +1,8 @@
 """Claude Agent SDK harness for owner messages."""
 
 from collections.abc import AsyncIterator
-from typing import Protocol
+from pathlib import Path
+from typing import Any, Protocol
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -11,11 +12,19 @@ from claude_agent_sdk import (
     query,
 )
 
-SYSTEM_PROMPT = (
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+INVENTORY_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "inventory.md"
+
+BASE_SYSTEM_PROMPT = (
     "You are a helpful assistant for an Indian kirana (grocery) store owner. "
     "The owner messages you from Telegram in plain language. "
-    "Reply concisely and helpfully. Domain tools are not available yet."
+    "Reply concisely and helpfully using the inventory tools when relevant."
 )
+
+
+def load_inventory_skill_prompt() -> str:
+    skill_text = INVENTORY_SKILL_PATH.read_text(encoding="utf-8")
+    return f"{BASE_SYSTEM_PROMPT}\n\n{skill_text}"
 
 
 class AgentHarness(Protocol):
@@ -23,16 +32,28 @@ class AgentHarness(Protocol):
 
 
 class ClaudeAgentHarness:
-    def __init__(self, model_id: str, anthropic_api_key: str) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        anthropic_api_key: str,
+        *,
+        mcp_servers: dict[str, Any] | None = None,
+        allowed_tools: list[str] | None = None,
+        system_prompt: str | None = None,
+    ) -> None:
         self._model_id = model_id
         self._anthropic_api_key = anthropic_api_key
+        self._mcp_servers = mcp_servers or {}
+        self._allowed_tools = allowed_tools or []
+        self._system_prompt = system_prompt or load_inventory_skill_prompt()
         self._session_ids: dict[int, str] = {}
 
     async def reply(self, chat_id: int, owner_message: str) -> str:
         options = ClaudeAgentOptions(
             model=self._model_id,
-            system_prompt=SYSTEM_PROMPT,
-            allowed_tools=[],
+            system_prompt=self._system_prompt,
+            mcp_servers=self._mcp_servers,
+            allowed_tools=self._allowed_tools,
             env={"ANTHROPIC_API_KEY": self._anthropic_api_key},
         )
         session_id = self._session_ids.get(chat_id)

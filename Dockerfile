@@ -9,6 +9,7 @@ RUN uv sync --frozen --no-dev
 
 COPY alembic.ini ./
 COPY alembic ./alembic
+COPY docs/agents ./docs/agents
 COPY src ./src
 
 ENV PYTHONPATH=/app
