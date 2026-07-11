@@ -64,6 +64,9 @@ async def test_receive_stock_updates_quantity_and_ledger(
     service = InventoryService(inventory_session)
     find_result = await service.find_product("maggi")
     product_id = find_result.candidates[0].product_id
+    product_before = await inventory_session.get(Product, product_id)
+    assert product_before is not None
+    quantity_before = product_before.quantity
 
     receive_result = await service.receive_stock(
         product_id=product_id,
@@ -74,22 +77,13 @@ async def test_receive_stock_updates_quantity_and_ledger(
 
     product = await inventory_session.get(Product, product_id)
     assert product is not None
-    assert product.quantity == Decimal("50")
+    assert product.quantity == quantity_before + Decimal("50")
     assert product.cost_price_paise == 1200
 
-    ledger_rows = (
-        (
-            await inventory_session.execute(
-                select(StockLedger).where(StockLedger.product_id == product_id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(ledger_rows) == 1
-    ledger_row = ledger_rows[0]
+    ledger_row = await inventory_session.get(StockLedger, receive_result.ledger_id)
+    assert ledger_row is not None
     assert ledger_row.delta == Decimal("50")
-    assert ledger_row.balance_after == Decimal("50")
+    assert ledger_row.balance_after == quantity_before + Decimal("50")
     assert ledger_row.reason == "stock_in"
     assert receive_result.ledger_id == ledger_row.ledger_id
 

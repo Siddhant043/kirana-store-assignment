@@ -48,4 +48,24 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
 
     assert asyncio.run(assert_inventory_tables_exist())
 
+    async def assert_billing_tables_exist() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            draft_bills = await table_exists(engine, "draft_bills")
+            draft_lines = await table_exists(engine, "draft_lines")
+            bills = await table_exists(engine, "bills")
+            bill_lines = await table_exists(engine, "bill_lines")
+            invoice_counters = await table_exists(engine, "invoice_counters")
+            return (
+                draft_bills
+                and draft_lines
+                and bills
+                and bill_lines
+                and invoice_counters
+            )
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_billing_tables_exist())
+
     command.upgrade(config, "head")
