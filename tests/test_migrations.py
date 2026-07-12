@@ -154,4 +154,29 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
 
     assert asyncio.run(assert_native_aliases_exist())
 
+    async def assert_product_barcode_column_exists() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            return await column_exists(engine, "products", "barcode")
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_product_barcode_column_exists())
+
+    async def assert_packaged_barcodes_seeded() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            async with engine.connect() as conn:
+                result = await conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM products "
+                        "WHERE barcode IS NOT NULL"
+                    )
+                )
+                return int(result.scalar_one()) >= 7
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_packaged_barcodes_seeded())
+
     command.upgrade(config, "head")

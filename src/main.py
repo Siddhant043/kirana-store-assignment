@@ -16,6 +16,7 @@ from src.agent.harness import ClaudeAgentHarness
 from src.bot.handler import (
     MessageSender,
     TelegramMessageSender,
+    TelegramPhotoDownloader,
     TelegramVoiceDownloader,
     UpdateHandler,
 )
@@ -78,6 +79,7 @@ def build_handler(
     message_sender = TelegramMessageSender(bot)
     scheduler = create_scheduler()
     voice_downloader = TelegramVoiceDownloader(bot)
+    photo_downloader = TelegramPhotoDownloader(bot)
     transcriber = WhisperTranscriber(
         api_key=settings.whisper_api_key,
         api_base_url=settings.whisper_api_base_url,
@@ -116,6 +118,7 @@ def build_handler(
         message_sender=message_sender,
         voice_downloader=voice_downloader,
         transcriber=transcriber,
+        photo_downloader=photo_downloader,
     )
     return bot, handler, scheduler, session_factory, message_sender
 

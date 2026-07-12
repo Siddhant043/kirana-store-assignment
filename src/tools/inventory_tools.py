@@ -8,6 +8,8 @@ from typing import Any
 from claude_agent_sdk import tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.bot.context import current_photo_bytes
+from src.domain.barcode import scan_barcode_image, serialize_scan_barcode_result
 from src.domain.inventory import (
     InventoryService,
     ProductNotFoundError,
@@ -16,6 +18,7 @@ from src.domain.inventory import (
     serialize_get_stock_result,
     serialize_list_expiring_soon_result,
     serialize_list_low_stock_result,
+    serialize_prepare_photo_product_result,
     serialize_receive_stock_result,
 )
 
@@ -49,6 +52,51 @@ def build_inventory_tools(
                 service = InventoryService(session)
                 result = await service.find_product(query_text)
                 return _tool_response(serialize_find_product_result(result))
+
+    @tool(
+        "scan_barcode",
+        "Decode a barcode from the current photo attachment and look up the "
+        "exact Product by products.barcode. No owner confirmation is needed "
+        "on a successful match. Call this first when the owner sends a photo.",
+        {},
+    )
+    async def scan_barcode_tool(_args: dict[str, Any]) -> dict[str, Any]:
+        photo = current_photo_bytes.get()
+        async with session_factory() as session:
+            async with session.begin():
+                service = InventoryService(session)
+                result = await scan_barcode_image(service, photo)
+                is_error = result.status == "refused"
+                return _tool_response(
+                    serialize_scan_barcode_result(result),
+                    is_error=is_error,
+                )
+
+    @tool(
+        "prepare_photo_product",
+        "After find_product on a vision guess, gate add_line behind owner "
+        "confirmation. Call with confirm=false first (returns "
+        "requires_confirmation), then confirm=true only after the owner agrees. "
+        "Never add_line from a photo vision guess until confirm=true.",
+        {
+            "product_id": int,
+            "confirm": bool,
+        },
+    )
+    async def prepare_photo_product_tool(args: dict[str, Any]) -> dict[str, Any]:
+        product_id = int(args["product_id"])
+        confirm = bool(args.get("confirm", False))
+        async with session_factory() as session:
+            async with session.begin():
+                service = InventoryService(session)
+                result = await service.prepare_photo_product(
+                    product_id,
+                    confirm=confirm,
+                )
+                return _tool_response(
+                    serialize_prepare_photo_product_result(result),
+                    is_error=result.status == "refused",
+                )
 
     @tool(
         "add_product",
@@ -181,6 +229,8 @@ def build_inventory_tools(
 
     return [
         find_product_tool,
+        scan_barcode_tool,
+        prepare_photo_product_tool,
         add_product_tool,
         receive_stock_tool,
         get_stock_tool,

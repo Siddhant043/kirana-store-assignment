@@ -66,6 +66,11 @@ class Product(Base):
     gst_slab: Mapped[int] = mapped_column(Integer, nullable=False)
     hsn_code: Mapped[str] = mapped_column(String(16), nullable=False)
     unit_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    barcode: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        unique=True,
+    )
     quantity: Mapped[Decimal] = mapped_column(
         Numeric(12, 3),
         nullable=False,
