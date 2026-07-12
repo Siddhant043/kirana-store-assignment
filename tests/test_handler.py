@@ -177,10 +177,10 @@ async def test_handler_persists_owner_chat_id(
 
     agent = FakeAgent()
     sender = FakeMessageSender()
-    handler = UpdateHandler(
-        session_factory=handler_session_factory,
+    handler, _, _, _, _ = _build_handler(
+        handler_session_factory,
         agent=agent,
-        message_sender=sender,
+        sender=sender,
     )
     await handler.handle(_text_update(update_id=3001, chat_id=777, text="hi"))
 
