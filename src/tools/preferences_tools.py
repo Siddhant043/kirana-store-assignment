@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.bot.context import require_owner_user_id
 from src.domain.preferences import (
+    KHATA_REMINDER_SCHEDULE_KEY,
     WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY,
     PreferenceRefusedResult,
     PreferencesService,
@@ -41,7 +42,9 @@ def build_preferences_tools(
     @tool(
         "set_preference",
         "Persist an Owner Preference (default Payment Mode, preferred Product, "
-        "or weekly_analysis_deck_schedule like 'mon 09:00' IST).",
+        "weekly_analysis_deck_schedule like 'mon 09:00' IST, "
+        "khata_reminder_schedule like '09:00' IST, or "
+        "khata_reminder_threshold_paise as integer paise).",
         {
             "preference_key": str,
             "preference_value": str,
@@ -64,9 +67,13 @@ def build_preferences_tools(
                         serialize_preference_refused_result(result),
                         is_error=True,
                     )
+        schedule_keys = {
+            WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY,
+            KHATA_REMINDER_SCHEDULE_KEY,
+        }
         if (
             on_schedule_changed is not None
-            and preference_key.strip() == WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY
+            and preference_key.strip() in schedule_keys
         ):
             await on_schedule_changed()
         return _tool_response(serialize_set_preference_result(result))

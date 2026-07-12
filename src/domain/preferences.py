@@ -16,6 +16,9 @@ PREFERRED_PRODUCT_PREFIX = "preferred_product:"
 WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY = "weekly_analysis_deck_schedule"
 OWNER_CHAT_ID_KEY = "owner_chat_id"
 WEEKLY_ANALYSIS_DECK_JOB_KEY = "weekly_analysis_deck"
+KHATA_REMINDER_SCHEDULE_KEY = "khata_reminder_schedule"
+KHATA_REMINDER_THRESHOLD_PAISE_KEY = "khata_reminder_threshold_paise"
+KHATA_REMINDERS_JOB_KEY = "khata_reminders"
 VALID_DEFAULT_PAYMENT_MODES = frozenset({"cash", "upi", "card", "khata"})
 
 WEEKDAY_ALIASES: dict[str, str] = {
@@ -41,6 +44,7 @@ WEEKDAY_ALIASES: dict[str, str] = {
 _SCHEDULE_PATTERN = re.compile(
     r"^([A-Za-z]+)\s+(\d{1,2}):(\d{2})$",
 )
+_DAILY_TIME_PATTERN = re.compile(r"^(\d{1,2}):(\d{2})$")
 
 
 @dataclass(frozen=True)
@@ -117,6 +121,11 @@ class PreferencesService:
         elif key == WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY:
             day, hour, minute = parse_weekly_deck_schedule(value)
             value = f"{day} {hour:02d}:{minute:02d}"
+        elif key == KHATA_REMINDER_SCHEDULE_KEY:
+            hour, minute = parse_khata_reminder_schedule(value)
+            value = f"{hour:02d}:{minute:02d}"
+        elif key == KHATA_REMINDER_THRESHOLD_PAISE_KEY:
+            value = str(int(value))
         elif key == OWNER_CHAT_ID_KEY:
             value = value.strip()
 
@@ -242,6 +251,26 @@ class PreferencesService:
                 )
             return None
 
+        if preference_key == KHATA_REMINDER_SCHEDULE_KEY:
+            try:
+                parse_khata_reminder_schedule(preference_value)
+            except ValueError:
+                return PreferenceRefusedResult(
+                    status="refused",
+                    reason="invalid_khata_reminder_schedule",
+                    details={"preference_value": preference_value},
+                )
+            return None
+
+        if preference_key == KHATA_REMINDER_THRESHOLD_PAISE_KEY:
+            if not preference_value.isdigit():
+                return PreferenceRefusedResult(
+                    status="refused",
+                    reason="invalid_khata_reminder_threshold_paise",
+                    details={"preference_value": preference_value},
+                )
+            return None
+
         if preference_key == OWNER_CHAT_ID_KEY:
             if not preference_value.isdigit():
                 return PreferenceRefusedResult(
@@ -294,6 +323,21 @@ def parse_weekly_deck_schedule(value: str) -> tuple[str, int, int]:
     return day, hour, minute
 
 
+def parse_khata_reminder_schedule(value: str) -> tuple[int, int]:
+    """Parse daily IST time text into (hour, minute)."""
+    match = _DAILY_TIME_PATTERN.fullmatch(value.strip())
+    if match is None:
+        msg = f"invalid khata reminder schedule: {value!r}"
+        raise ValueError(msg)
+    hour_raw, minute_raw = match.groups()
+    hour = int(hour_raw)
+    minute = int(minute_raw)
+    if hour > 23 or minute > 59:
+        msg = f"invalid time: {hour_raw}:{minute_raw}"
+        raise ValueError(msg)
+    return hour, minute
+
+
 def ist_iso_week_period_key(moment: datetime | None = None) -> str:
     """ISO week key for the moment in Asia/Kolkata (e.g. 2026-W29)."""
     if moment is None:
@@ -303,6 +347,16 @@ def ist_iso_week_period_key(moment: datetime | None = None) -> str:
     local = moment.astimezone(SHOP_TZ)
     iso_year, iso_week, _ = local.isocalendar()
     return f"{iso_year}-W{iso_week:02d}"
+
+
+def ist_calendar_day_period_key(moment: datetime | None = None) -> str:
+    """Calendar day key for the moment in Asia/Kolkata (e.g. 2026-07-12)."""
+    if moment is None:
+        moment = datetime.now(tz=UTC)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    local = moment.astimezone(SHOP_TZ)
+    return local.date().isoformat()
 
 
 def serialize_set_preference_result(result: SetPreferenceResult) -> dict[str, object]:

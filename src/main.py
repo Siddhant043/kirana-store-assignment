@@ -24,7 +24,7 @@ from src.db.session import create_engine, create_session_factory
 from src.domain.voice import WhisperTranscriber
 from src.scheduler.lifecycle import (
     create_scheduler,
-    refresh_weekly_deck_jobs,
+    refresh_scheduled_jobs,
     shutdown_scheduler,
     start_scheduler,
 )
@@ -85,7 +85,7 @@ def build_handler(
     )
 
     async def on_schedule_changed() -> None:
-        await refresh_weekly_deck_jobs(scheduler, session_factory, message_sender)
+        await refresh_scheduled_jobs(scheduler, session_factory, message_sender)
 
     inventory_server = create_inventory_mcp_server(session_factory)
     billing_server = create_billing_mcp_server(session_factory)
@@ -151,7 +151,7 @@ async def run_bot(settings: Settings) -> None:
                 message.chat.id,
             )
 
-    await refresh_weekly_deck_jobs(scheduler, session_factory, message_sender)
+    await refresh_scheduled_jobs(scheduler, session_factory, message_sender)
     start_scheduler(scheduler)
 
     await bot.delete_webhook(drop_pending_updates=False)
