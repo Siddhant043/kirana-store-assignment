@@ -262,10 +262,6 @@ cp .env.example .env
 #   TELEGRAM_BOT_TOKEN=
 #   ANTHROPIC_API_KEY=
 #   WHISPER_API_KEY=
-# Optional:
-#   CLAUDE_MODEL_ID=claude-sonnet-5
-#   WHISPER_API_BASE_URL=...   # default OpenAI; override for Groq etc.
-#   DATABASE_URL=postgresql+asyncpg://kirana:kirana@postgres:5432/kirana
 ```
 
 ### Run locally
