@@ -7,9 +7,10 @@ Use documents tools for Shop Profile, GST invoice PDFs, and analysis decks. Invo
 | Owner says | Tool | Notes |
 |------------|------|-------|
 | "my shop is …", "set GSTIN …" | `set_shop_profile` | Persist shop name, address, GSTIN for invoice headers. |
-| "what's my shop profile?" | `get_shop_profile` | Read current Shop Profile. |
+| "use this logo …", "brand color #1A73E8" | `set_shop_profile` | Optional `logo_url` (image URL/path) and `accent_color` (`#RRGGBB`). Omit to keep existing branding; empty string clears. |
+| "what's my shop profile?" | `get_shop_profile` | Read current Shop Profile including branding. |
 
-A Shop Profile must exist before generating an invoice PDF. If `send_invoice_pdf` refuses with `shop_profile_missing`, ask the owner for shop name and GSTIN, call `set_shop_profile`, then retry.
+A Shop Profile must exist before generating an invoice PDF. If `send_invoice_pdf` refuses with `shop_profile_missing`, ask the owner for shop name and GSTIN, call `set_shop_profile`, then retry. Logo and accent color are presentation-only — they do not change GST fields on the invoice.
 
 ## Invoice PDF
 

@@ -98,6 +98,10 @@ async def render_standing_memory(
     if isinstance(shop, ShopProfileResult):
         gstin = shop.gstin or "(none)"
         lines.append(f"- Shop Profile: {shop.shop_name}, GSTIN={gstin}")
+        if shop.logo_url:
+            lines.append(f"- Shop logo URL: {shop.logo_url}")
+        if shop.accent_color:
+            lines.append(f"- Shop accent color: {shop.accent_color}")
     else:
         lines.append("- Shop Profile: (not set)")
 

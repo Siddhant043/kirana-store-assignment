@@ -47,6 +47,8 @@ class InvoiceView:
     shop_name: str
     shop_address: str | None
     shop_gstin: str | None
+    logo_url: str | None
+    accent_color: str | None
     invoice_number: str
     finalized_at: datetime
     payment_mode: str
@@ -174,6 +176,8 @@ class InvoiceService:
             shop_name=shop_result.shop_name,
             shop_address=shop_result.address,
             shop_gstin=shop_result.gstin,
+            logo_url=shop_result.logo_url,
+            accent_color=shop_result.accent_color,
             payment_reference=payment_reference,
         )
         pdf_bytes = await run_cpu_bound(render_invoice_pdf, invoice_view)
@@ -223,6 +227,8 @@ class InvoiceService:
         shop_name: str,
         shop_address: str | None,
         shop_gstin: str | None,
+        logo_url: str | None,
+        accent_color: str | None,
         payment_reference: str | None,
     ) -> InvoiceView:
         lines = [
@@ -243,6 +249,8 @@ class InvoiceService:
             shop_name=shop_name,
             shop_address=shop_address,
             shop_gstin=shop_gstin,
+            logo_url=logo_url,
+            accent_color=accent_color,
             invoice_number=bill.invoice_number,
             finalized_at=bill.finalized_at,
             payment_mode=bill.payment_mode,
@@ -290,14 +298,18 @@ def _tax_breakup_from_lines(lines: list[BillLine]) -> list[TaxBreakupRow]:
     return [breakup[slab] for slab in sorted(breakup)]
 
 
-def render_invoice_pdf(invoice: InvoiceView) -> bytes:
+def render_invoice_html(invoice: InvoiceView) -> str:
     environment = Environment(
         loader=FileSystemLoader(str(TEMPLATES_DIR)),
         autoescape=select_autoescape(["html", "xml"]),
     )
     environment.filters["paise"] = format_paise_as_rupees
     template = environment.get_template("invoice.html")
-    html = template.render(invoice=invoice)
+    return template.render(invoice=invoice)
+
+
+def render_invoice_pdf(invoice: InvoiceView) -> bytes:
+    html = render_invoice_html(invoice)
     pdf_buffer = BytesIO()
     HTML(string=html, base_url=str(TEMPLATES_DIR)).write_pdf(pdf_buffer)
     return pdf_buffer.getvalue()

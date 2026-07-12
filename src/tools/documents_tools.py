@@ -24,9 +24,11 @@ from src.domain.invoice import (
 )
 from src.domain.shop_profile import (
     ShopProfileMissingResult,
+    ShopProfileRefusedResult,
     ShopProfileResult,
     ShopProfileService,
     serialize_shop_profile_missing_result,
+    serialize_shop_profile_refused_result,
     serialize_shop_profile_result,
 )
 
@@ -60,12 +62,16 @@ def build_documents_tools(
 ) -> list[Any]:
     @tool(
         "set_shop_profile",
-        "Create or update the Shop Profile (shop name, address, GSTIN) "
-        "printed on invoice PDFs.",
+        "Create or update the Shop Profile (shop name, address, GSTIN, "
+        "optional logo_url and accent_color) printed on invoice PDFs. "
+        "Omit logo_url/accent_color to leave existing branding unchanged; "
+        "pass empty string to clear a branding field.",
         {
             "shop_name": str,
             "address": str,
             "gstin": str,
+            "logo_url": str,
+            "accent_color": str,
         },
     )
     async def set_shop_profile_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -73,6 +79,17 @@ def build_documents_tools(
         shop_name = str(args["shop_name"])
         address = str(args["address"]) if args.get("address") else None
         gstin = str(args["gstin"]) if args.get("gstin") else None
+        branding_kwargs: dict[str, str | None] = {}
+        if "logo_url" in args:
+            raw_logo = args.get("logo_url")
+            branding_kwargs["logo_url"] = (
+                str(raw_logo) if raw_logo is not None else None
+            )
+        if "accent_color" in args:
+            raw_accent = args.get("accent_color")
+            branding_kwargs["accent_color"] = (
+                str(raw_accent) if raw_accent is not None else None
+            )
         async with session_factory() as session:
             async with session.begin():
                 service = ShopProfileService(session)
@@ -81,7 +98,13 @@ def build_documents_tools(
                     shop_name=shop_name,
                     address=address,
                     gstin=gstin,
+                    **branding_kwargs,
                 )
+                if isinstance(result, ShopProfileRefusedResult):
+                    return _tool_response(
+                        serialize_shop_profile_refused_result(result),
+                        is_error=True,
+                    )
                 return _tool_response(serialize_shop_profile_result(result))
 
     @tool(

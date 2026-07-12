@@ -16,15 +16,34 @@
     .invoice-number { font-size: 16pt; font-weight: bold; margin-top: 12pt; }
     table { width: 100%; border-collapse: collapse; margin-top: 10pt; }
     th, td { border: 1px solid #ccc; padding: 6pt 8pt; text-align: left; }
-    th { background: #f3f3f3; font-size: 10pt; }
+    th {
+      background: {% if invoice.accent_color %}{{ invoice.accent_color }}{% else %}#f3f3f3{% endif %};
+      {% if invoice.accent_color %}color: #fff;{% endif %}
+      font-size: 10pt;
+    }
     td.num, th.num { text-align: right; }
     .totals { width: 45%; margin-left: auto; }
     .totals td { border: none; padding: 4pt 0; }
     .totals .grand { font-weight: bold; font-size: 12pt; border-top: 1px solid #111; }
+    .logo {
+      max-height: 48pt;
+      max-width: 120pt;
+      display: block;
+      margin-bottom: 8pt;
+    }
+    header {
+      {% if invoice.accent_color %}
+      border-bottom: 3pt solid {{ invoice.accent_color }};
+      padding-bottom: 8pt;
+      {% endif %}
+    }
   </style>
 </head>
 <body>
   <header>
+    {% if invoice.logo_url %}
+    <img class="logo" src="{{ invoice.logo_url }}" alt="" />
+    {% endif %}
     <h1>{{ invoice.shop_name }}</h1>
     {% if invoice.shop_address %}
     <div class="muted">{{ invoice.shop_address }}</div>
