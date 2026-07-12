@@ -1,7 +1,7 @@
 """Read-only analytics: Daily Close and weekly sales reports."""
 
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import func, select
@@ -24,6 +24,20 @@ class PaymentModeSplit:
     upi_paise: int
     card_paise: int
     khata_paise: int
+
+
+@dataclass(frozen=True)
+class DailySalesPoint:
+    business_date: str
+    bill_count: int
+    total_sales_paise: int
+
+
+@dataclass(frozen=True)
+class GstSlabTotal:
+    gst_slab: int
+    tax_collected_paise: int
+    taxable_paise: int
 
 
 @dataclass(frozen=True)
@@ -108,8 +122,7 @@ class AnalyticsService:
 
     async def weekly_sales_report(self) -> WeeklySalesReportResult:
         start_date, end_date = rolling_last_n_ist_days(7)
-        start_utc, end_utc = utc_bounds_for_ist_range(start_date, end_date)
-        report = await self._build_report(start_utc, end_utc)
+        report = await self.report_for_ist_range(start_date, end_date)
         return WeeklySalesReportResult(
             status="ok",
             period_start=start_date.isoformat(),
@@ -125,6 +138,111 @@ class AnalyticsService:
             payment_mode_split=report.payment_mode_split,
             top_items=report.top_items,
         )
+
+    async def report_for_ist_range(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> ReportAggregate:
+        start_utc, end_utc = utc_bounds_for_ist_range(start_date, end_date)
+        return await self._build_report(start_utc, end_utc)
+
+    async def sales_trend(self, day_count: int = 7) -> list[DailySalesPoint]:
+        start_date, end_date = rolling_last_n_ist_days(day_count)
+        points: list[DailySalesPoint] = []
+        current = start_date
+        while current <= end_date:
+            start_utc, end_utc = utc_bounds_for_ist_date(current)
+            bills = await self._load_bills_in_range(start_utc, end_utc)
+            totals = self._bill_totals(bills)
+            points.append(
+                DailySalesPoint(
+                    business_date=current.isoformat(),
+                    bill_count=len(bills),
+                    total_sales_paise=totals["total_sales_paise"],
+                )
+            )
+            current = current + timedelta(days=1)
+        return points
+
+    async def gst_collected_by_slab(
+        self,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[GstSlabTotal]:
+        period_start, period_end = rolling_last_n_ist_days(7)
+        if start_date is not None:
+            period_start = start_date
+        if end_date is not None:
+            period_end = end_date
+        start_utc, end_utc = utc_bounds_for_ist_range(period_start, period_end)
+        result = await self._session.execute(
+            select(
+                BillLine.gst_slab,
+                func.coalesce(
+                    func.sum(BillLine.cgst_paise + BillLine.sgst_paise),
+                    0,
+                ).label("tax_collected_paise"),
+                func.coalesce(func.sum(BillLine.taxable_paise), 0).label(
+                    "taxable_paise"
+                ),
+            )
+            .join(Bill, Bill.bill_id == BillLine.bill_id)
+            .where(
+                Bill.finalized_at >= start_utc,
+                Bill.finalized_at < end_utc,
+            )
+            .group_by(BillLine.gst_slab)
+            .order_by(BillLine.gst_slab)
+        )
+        return [
+            GstSlabTotal(
+                gst_slab=int(row.gst_slab),
+                tax_collected_paise=int(row.tax_collected_paise),
+                taxable_paise=int(row.taxable_paise),
+            )
+            for row in result.all()
+        ]
+
+    async def top_items_by_quantity(
+        self,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        *,
+        limit: int = TOP_ITEMS_LIMIT,
+    ) -> list[TopItem]:
+        period_start, period_end = rolling_last_n_ist_days(7)
+        if start_date is not None:
+            period_start = start_date
+        if end_date is not None:
+            period_end = end_date
+        start_utc, end_utc = utc_bounds_for_ist_range(period_start, period_end)
+        result = await self._session.execute(
+            select(
+                BillLine.product_id,
+                Product.name,
+                func.sum(BillLine.quantity).label("quantity"),
+                func.sum(BillLine.line_total_paise).label("revenue_paise"),
+            )
+            .join(Bill, Bill.bill_id == BillLine.bill_id)
+            .join(Product, Product.product_id == BillLine.product_id)
+            .where(
+                Bill.finalized_at >= start_utc,
+                Bill.finalized_at < end_utc,
+            )
+            .group_by(BillLine.product_id, Product.name)
+            .order_by(func.sum(BillLine.quantity).desc())
+            .limit(limit)
+        )
+        return [
+            TopItem(
+                product_id=row.product_id,
+                name=row.name,
+                quantity=str(row.quantity),
+                revenue_paise=int(row.revenue_paise),
+            )
+            for row in result.all()
+        ]
 
     async def _build_report(
         self,

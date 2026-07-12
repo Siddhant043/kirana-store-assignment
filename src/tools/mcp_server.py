@@ -45,6 +45,7 @@ DOCUMENTS_ALLOWED_TOOLS = [
     "mcp__documents__get_shop_profile",
     "mcp__documents__find_bill",
     "mcp__documents__send_invoice_pdf",
+    "mcp__documents__send_analysis_deck",
 ]
 
 ALL_STORE_ALLOWED_TOOLS = (

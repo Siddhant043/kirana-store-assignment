@@ -8,6 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.bot.context import require_chat_id, require_owner_user_id
 from src.db.models import Bill
+from src.domain.analysis_deck import (
+    compose_insights,
+    gather_analysis_deck_data,
+    generate_analysis_deck,
+)
+from src.domain.doc_gen import run_cpu_bound
 from src.domain.invoice import (
     InvoiceRefusedResult,
     InvoiceService,
@@ -159,11 +165,54 @@ def build_documents_tools(
             )
             return _tool_response(serialize_invoice_pdf_result(pdf_result))
 
+    @tool(
+        "send_analysis_deck",
+        "Generate this week's sales analysis deck (.pptx) with native charts "
+        "for sales trend, top items, Payment Mode mix, GST by GST Slab, and "
+        "stock health, then send it as a Telegram document.",
+        {
+            "day_count": int,
+        },
+    )
+    async def send_analysis_deck_tool(args: dict[str, Any]) -> dict[str, Any]:
+        chat_id = require_chat_id()
+        day_count = int(args["day_count"]) if args.get("day_count") is not None else 7
+        async with session_factory() as session:
+            deck_data = await gather_analysis_deck_data(session, day_count=day_count)
+            insights_text = compose_insights(deck_data)
+            pptx_bytes = await run_cpu_bound(
+                generate_analysis_deck,
+                deck_data,
+                insights_text,
+            )
+            filename = (
+                f"analysis-{deck_data.period_start}-to-{deck_data.period_end}.pptx"
+            )
+            await message_sender.send_document(
+                chat_id=chat_id,
+                filename=filename,
+                data=pptx_bytes,
+                caption=(
+                    f"Analysis deck {deck_data.period_start} to {deck_data.period_end}"
+                ),
+            )
+            return _tool_response(
+                {
+                    "status": "ok",
+                    "filename": filename,
+                    "period_start": deck_data.period_start,
+                    "period_end": deck_data.period_end,
+                    "bill_count": deck_data.bill_count,
+                    "total_sales_paise": deck_data.total_sales_paise,
+                }
+            )
+
     return [
         set_shop_profile_tool,
         get_shop_profile_tool,
         find_bill_tool,
         send_invoice_pdf_tool,
+        send_analysis_deck_tool,
     ]
 
 
