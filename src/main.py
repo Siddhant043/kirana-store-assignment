@@ -15,7 +15,8 @@ from src.bot.handler import TelegramMessageSender, UpdateHandler
 from src.config import Settings, load_settings
 from src.db.session import create_engine, create_session_factory
 from src.tools.mcp_server import (
-    INVENTORY_ALLOWED_TOOLS,
+    ALL_STORE_ALLOWED_TOOLS,
+    create_billing_mcp_server,
     create_inventory_mcp_server,
 )
 
@@ -49,11 +50,15 @@ def build_handler(settings: Settings) -> tuple[Bot, UpdateHandler]:
     session_factory = create_session_factory(engine)
     bot = Bot(token=settings.telegram_bot_token)
     inventory_server = create_inventory_mcp_server(session_factory)
+    billing_server = create_billing_mcp_server(session_factory)
     agent = ClaudeAgentHarness(
         model_id=settings.claude_model_id,
         anthropic_api_key=settings.anthropic_api_key,
-        mcp_servers={"inventory": inventory_server},
-        allowed_tools=INVENTORY_ALLOWED_TOOLS,
+        mcp_servers={
+            "inventory": inventory_server,
+            "billing": billing_server,
+        },
+        allowed_tools=ALL_STORE_ALLOWED_TOOLS,
     )
     handler = UpdateHandler(
         session_factory=session_factory,

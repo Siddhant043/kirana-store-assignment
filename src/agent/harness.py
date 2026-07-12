@@ -12,19 +12,23 @@ from claude_agent_sdk import (
     query,
 )
 
+from src.bot.context import current_chat_id
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 INVENTORY_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "inventory.md"
+BILLING_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "billing.md"
 
 BASE_SYSTEM_PROMPT = (
     "You are a helpful assistant for an Indian kirana (grocery) store owner. "
     "The owner messages you from Telegram in plain language. "
-    "Reply concisely and helpfully using the inventory tools when relevant."
+    "Reply concisely and helpfully using inventory and billing tools when relevant."
 )
 
 
-def load_inventory_skill_prompt() -> str:
-    skill_text = INVENTORY_SKILL_PATH.read_text(encoding="utf-8")
-    return f"{BASE_SYSTEM_PROMPT}\n\n{skill_text}"
+def load_system_prompt() -> str:
+    inventory_skill = INVENTORY_SKILL_PATH.read_text(encoding="utf-8")
+    billing_skill = BILLING_SKILL_PATH.read_text(encoding="utf-8")
+    return f"{BASE_SYSTEM_PROMPT}\n\n{inventory_skill}\n\n{billing_skill}"
 
 
 class AgentHarness(Protocol):
@@ -45,7 +49,7 @@ class ClaudeAgentHarness:
         self._anthropic_api_key = anthropic_api_key
         self._mcp_servers = mcp_servers or {}
         self._allowed_tools = allowed_tools or []
-        self._system_prompt = system_prompt or load_inventory_skill_prompt()
+        self._system_prompt = system_prompt or load_system_prompt()
         self._session_ids: dict[int, str] = {}
 
     async def reply(self, chat_id: int, owner_message: str) -> str:
@@ -60,22 +64,26 @@ class ClaudeAgentHarness:
         if session_id is not None:
             options.resume = session_id
 
-        reply_text = ""
-        async for message in self._stream_messages(owner_message, options):
-            if (
-                hasattr(message, "subtype")
-                and getattr(message, "subtype", None) == "init"
-                and hasattr(message, "data")
-            ):
-                data = message.data
-                if isinstance(data, dict) and "session_id" in data:
-                    self._session_ids[chat_id] = str(data["session_id"])
-            if isinstance(message, AssistantMessage):
-                reply_text = _text_from_assistant(message)
-            if isinstance(message, ResultMessage) and message.result:
-                reply_text = message.result
+        chat_token = current_chat_id.set(chat_id)
+        try:
+            reply_text = ""
+            async for message in self._stream_messages(owner_message, options):
+                if (
+                    hasattr(message, "subtype")
+                    and getattr(message, "subtype", None) == "init"
+                    and hasattr(message, "data")
+                ):
+                    data = message.data
+                    if isinstance(data, dict) and "session_id" in data:
+                        self._session_ids[chat_id] = str(data["session_id"])
+                if isinstance(message, AssistantMessage):
+                    reply_text = _text_from_assistant(message)
+                if isinstance(message, ResultMessage) and message.result:
+                    reply_text = message.result
 
-        return reply_text or "I could not generate a reply."
+            return reply_text or "I could not generate a reply."
+        finally:
+            current_chat_id.reset(chat_token)
 
     async def _stream_messages(
         self,
