@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from alembic.config import Config
+from sqlalchemy import text
 
 from alembic import command
 from src.db.session import create_engine
@@ -118,5 +119,21 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
             await engine.dispose()
 
     assert asyncio.run(assert_shop_branding_columns_exist())
+
+    async def assert_native_aliases_exist() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            async with engine.connect() as conn:
+                result = await conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM aliases "
+                        "WHERE alias IN ('चीनी', 'नमक', 'चावल', 'சர்க்கரை')"
+                    )
+                )
+                return int(result.scalar_one()) >= 4
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_native_aliases_exist())
 
     command.upgrade(config, "head")

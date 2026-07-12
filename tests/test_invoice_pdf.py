@@ -616,3 +616,61 @@ async def test_regenerate_same_bill_pdf_text_identical(
     assert isinstance(first, InvoicePdfResult)
     assert isinstance(second, InvoicePdfResult)
     assert _extract_pdf_text(first.pdf_bytes) == _extract_pdf_text(second.pdf_bytes)
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_renders_native_script_free_text(
+    inventory_session: AsyncSession,
+) -> None:
+    shop = ShopProfileService(inventory_session)
+    await shop.set_shop_profile(
+        OWNER_TELEGRAM_USER_ID,
+        shop_name="सिद्दू किराना",
+        address="12 Market Road, Pune",
+        gstin="27AAAAA0000A1Z5",
+    )
+    product = await _create_product(
+        inventory_session,
+        name="चीनी / சர்க்கரை 1kg",
+        mrp_paise=5000,
+        gst_slab=0,
+        hsn_code="170199",
+    )
+    bill = await _seed_bill(
+        inventory_session,
+        payment_mode="khata",
+        invoice_number="INV-I18N-0001",
+        lines=[(product, Decimal("1"), 5000, 5000, 0, 0, 0)],
+        subtotal_paise=5000,
+        cgst_paise=0,
+        sgst_paise=0,
+        round_off_paise=0,
+        total_paise=5000,
+    )
+    customer = Customer(name="रमेश कुमार", phone=None)
+    inventory_session.add(customer)
+    await inventory_session.flush()
+    inventory_session.add(
+        KhataEntry(
+            customer_id=customer.customer_id,
+            entry_type="charge",
+            amount_paise=5000,
+            bill_id=bill.bill_id,
+        )
+    )
+    await inventory_session.flush()
+
+    service = InvoiceService(inventory_session)
+    result = await service.generate_invoice_pdf(
+        bill.bill_id,
+        owner_telegram_user_id=OWNER_TELEGRAM_USER_ID,
+    )
+    assert result.status == "ok"
+    text = _extract_pdf_text(result.pdf_bytes)
+    assert "सिद्दू किराना" in text
+    assert "चीनी" in text
+    assert "சர்க்கரை" in text
+    assert "रमेश" in text
+    assert "HSN" in text
+    assert "CGST" in text
+    assert "\ufffd" not in text
