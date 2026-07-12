@@ -1,16 +1,46 @@
 """Owner Preferences: durable defaults keyed by Telegram user id."""
 
+import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import PaymentMode, Preference, Product
+from src.domain.shop_time import SHOP_TZ
 
 DEFAULT_PAYMENT_MODE_KEY = "default_payment_mode"
 PREFERRED_PRODUCT_PREFIX = "preferred_product:"
+WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY = "weekly_analysis_deck_schedule"
+OWNER_CHAT_ID_KEY = "owner_chat_id"
+WEEKLY_ANALYSIS_DECK_JOB_KEY = "weekly_analysis_deck"
 VALID_DEFAULT_PAYMENT_MODES = frozenset({"cash", "upi", "card", "khata"})
+
+WEEKDAY_ALIASES: dict[str, str] = {
+    "mon": "mon",
+    "monday": "mon",
+    "tue": "tue",
+    "tues": "tue",
+    "tuesday": "tue",
+    "wed": "wed",
+    "wednesday": "wed",
+    "thu": "thu",
+    "thur": "thu",
+    "thurs": "thu",
+    "thursday": "thu",
+    "fri": "fri",
+    "friday": "fri",
+    "sat": "sat",
+    "saturday": "sat",
+    "sun": "sun",
+    "sunday": "sun",
+}
+
+_SCHEDULE_PATTERN = re.compile(
+    r"^([A-Za-z]+)\s+(\d{1,2}):(\d{2})$",
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +114,11 @@ class PreferencesService:
 
         if key == DEFAULT_PAYMENT_MODE_KEY:
             value = value.lower()
+        elif key == WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY:
+            day, hour, minute = parse_weekly_deck_schedule(value)
+            value = f"{day} {hour:02d}:{minute:02d}"
+        elif key == OWNER_CHAT_ID_KEY:
+            value = value.strip()
 
         existing = await self._load(owner_telegram_user_id, key)
         if existing is None:
@@ -196,6 +231,26 @@ class PreferencesService:
                 )
             return None
 
+        if preference_key == WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY:
+            try:
+                parse_weekly_deck_schedule(preference_value)
+            except ValueError:
+                return PreferenceRefusedResult(
+                    status="refused",
+                    reason="invalid_weekly_deck_schedule",
+                    details={"preference_value": preference_value},
+                )
+            return None
+
+        if preference_key == OWNER_CHAT_ID_KEY:
+            if not preference_value.isdigit():
+                return PreferenceRefusedResult(
+                    status="refused",
+                    reason="invalid_owner_chat_id",
+                    details={"preference_value": preference_value},
+                )
+            return None
+
         return PreferenceRefusedResult(
             status="refused",
             reason="unknown_preference_key",
@@ -218,6 +273,36 @@ class PreferencesService:
 
 def preferred_product_key(normalized_query: str) -> str:
     return f"{PREFERRED_PRODUCT_PREFIX}{normalized_query.strip().lower()}"
+
+
+def parse_weekly_deck_schedule(value: str) -> tuple[str, int, int]:
+    """Parse schedule text into (weekday_abbr, hour, minute) in IST terms."""
+    match = _SCHEDULE_PATTERN.fullmatch(value.strip())
+    if match is None:
+        msg = f"invalid weekly deck schedule: {value!r}"
+        raise ValueError(msg)
+    day_raw, hour_raw, minute_raw = match.groups()
+    day = WEEKDAY_ALIASES.get(day_raw.lower())
+    if day is None:
+        msg = f"invalid weekday: {day_raw!r}"
+        raise ValueError(msg)
+    hour = int(hour_raw)
+    minute = int(minute_raw)
+    if hour > 23 or minute > 59:
+        msg = f"invalid time: {hour_raw}:{minute_raw}"
+        raise ValueError(msg)
+    return day, hour, minute
+
+
+def ist_iso_week_period_key(moment: datetime | None = None) -> str:
+    """ISO week key for the moment in Asia/Kolkata (e.g. 2026-W29)."""
+    if moment is None:
+        moment = datetime.now(tz=UTC)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    local = moment.astimezone(SHOP_TZ)
+    iso_year, iso_week, _ = local.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
 
 
 def serialize_set_preference_result(result: SetPreferenceResult) -> dict[str, object]:

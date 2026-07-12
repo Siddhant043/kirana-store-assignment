@@ -379,3 +379,16 @@ class Preference(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class SentJob(Base):
+    __tablename__ = "sent_jobs"
+
+    owner_telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    job_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    period_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )

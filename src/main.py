@@ -1,4 +1,4 @@
-"""Composition root: migrations, bot startup, long-polling."""
+"""Composition root: migrations, bot startup, long-polling, scheduler."""
 
 import asyncio
 import logging
@@ -8,12 +8,20 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, Update
 from alembic.config import Config
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from alembic import command
 from src.agent.harness import ClaudeAgentHarness
-from src.bot.handler import TelegramMessageSender, UpdateHandler
+from src.bot.handler import MessageSender, TelegramMessageSender, UpdateHandler
 from src.config import Settings, load_settings
 from src.db.session import create_engine, create_session_factory
+from src.scheduler.lifecycle import (
+    create_scheduler,
+    refresh_weekly_deck_jobs,
+    shutdown_scheduler,
+    start_scheduler,
+)
 from src.tools.mcp_server import (
     ALL_STORE_ALLOWED_TOOLS,
     create_analytics_mcp_server,
@@ -49,17 +57,33 @@ def run_migrations(database_url: str) -> None:
     logger.info("Alembic migrations applied")
 
 
-def build_handler(settings: Settings) -> tuple[Bot, UpdateHandler]:
+def build_handler(
+    settings: Settings,
+) -> tuple[
+    Bot,
+    UpdateHandler,
+    AsyncIOScheduler,
+    async_sessionmaker[AsyncSession],
+    MessageSender,
+]:
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     bot = Bot(token=settings.telegram_bot_token)
     message_sender = TelegramMessageSender(bot)
+    scheduler = create_scheduler()
+
+    async def on_schedule_changed() -> None:
+        await refresh_weekly_deck_jobs(scheduler, session_factory, message_sender)
+
     inventory_server = create_inventory_mcp_server(session_factory)
     billing_server = create_billing_mcp_server(session_factory)
     khata_server = create_khata_mcp_server(session_factory)
     analytics_server = create_analytics_mcp_server(session_factory)
     documents_server = create_documents_mcp_server(session_factory, message_sender)
-    preferences_server = create_preferences_mcp_server(session_factory)
+    preferences_server = create_preferences_mcp_server(
+        session_factory,
+        on_schedule_changed=on_schedule_changed,
+    )
     agent = ClaudeAgentHarness(
         model_id=settings.claude_model_id,
         anthropic_api_key=settings.anthropic_api_key,
@@ -79,11 +103,11 @@ def build_handler(settings: Settings) -> tuple[Bot, UpdateHandler]:
         agent=agent,
         message_sender=message_sender,
     )
-    return bot, handler
+    return bot, handler, scheduler, session_factory, message_sender
 
 
 async def run_bot(settings: Settings) -> None:
-    bot, handler = build_handler(settings)
+    bot, handler, scheduler, session_factory, message_sender = build_handler(settings)
     dispatcher = Dispatcher()
 
     @dispatcher.message()
@@ -113,12 +137,18 @@ async def run_bot(settings: Settings) -> None:
                 message.chat.id,
             )
 
+    await refresh_weekly_deck_jobs(scheduler, session_factory, message_sender)
+    start_scheduler(scheduler)
+
     await bot.delete_webhook(drop_pending_updates=False)
     logger.info(
         "Starting Telegram long-polling (model=%s)",
         settings.claude_model_id,
     )
-    await dispatcher.start_polling(bot)
+    try:
+        await dispatcher.start_polling(bot)
+    finally:
+        shutdown_scheduler(scheduler)
 
 
 def main() -> None:

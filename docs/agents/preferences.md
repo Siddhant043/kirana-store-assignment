@@ -8,8 +8,11 @@ Standing Owner Preferences and Shop Profile survive across sessions. Conversatio
 |------------|------|-------|
 | "always use UPI", "default payment is cash" | `set_preference` | `preference_key=default_payment_mode`, value `cash` \| `upi` \| `card` \| `khata`. |
 | "when I say atta I mean …" | `set_preference` | After `find_product`, key `preferred_product:<normalized_query>`, value grounded `product_id` as a string. |
+| "send my weekly deck Monday 9am IST" | `set_preference` | `preference_key=weekly_analysis_deck_schedule`, value like `mon 09:00` (day + 24h time, IST). |
 | "what are my defaults?" | `get_preferences` | List all Preferences for this Owner. |
 | "my shop is …", GSTIN | `set_shop_profile` | Shop identity — use documents tools, not Preferences. |
+
+The Owner's Telegram `chat_id` is stored as Preference `owner_chat_id` automatically on each message (for scheduled delivery). Do not invent a chat id.
 
 ## Payment Mode defaults vs one-Bill override
 

@@ -10,7 +10,10 @@ from src.tools.billing_tools import build_billing_tools
 from src.tools.documents_tools import DocumentSender, build_documents_tools
 from src.tools.inventory_tools import build_inventory_tools
 from src.tools.khata_tools import build_khata_tools
-from src.tools.preferences_tools import build_preferences_tools
+from src.tools.preferences_tools import (
+    ScheduleChangedCallback,
+    build_preferences_tools,
+)
 
 INVENTORY_ALLOWED_TOOLS = [
     "mcp__inventory__find_product",
@@ -123,8 +126,13 @@ def create_documents_mcp_server(
 
 def create_preferences_mcp_server(
     session_factory: async_sessionmaker[AsyncSession],
+    *,
+    on_schedule_changed: ScheduleChangedCallback | None = None,
 ) -> Any:
-    tools = build_preferences_tools(session_factory)
+    tools = build_preferences_tools(
+        session_factory,
+        on_schedule_changed=on_schedule_changed,
+    )
     return create_sdk_mcp_server(
         name="preferences",
         version="1.0.0",
