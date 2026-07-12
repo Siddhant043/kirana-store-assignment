@@ -19,9 +19,19 @@ class FakeAgent:
 class FakeMessageSender(MessageSender):
     def __init__(self) -> None:
         self.sent: list[tuple[int, str]] = []
+        self.documents: list[tuple[int, str, bytes, str | None]] = []
 
     async def send_text(self, chat_id: int, text: str) -> None:
         self.sent.append((chat_id, text))
+
+    async def send_document(
+        self,
+        chat_id: int,
+        filename: str,
+        data: bytes,
+        caption: str | None = None,
+    ) -> None:
+        self.documents.append((chat_id, filename, data, caption))
 
 
 def _text_update(update_id: int, chat_id: int, text: str) -> Update:

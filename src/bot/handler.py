@@ -14,6 +14,14 @@ from src.db.session import session_scope
 class MessageSender(Protocol):
     async def send_text(self, chat_id: int, text: str) -> None: ...
 
+    async def send_document(
+        self,
+        chat_id: int,
+        filename: str,
+        data: bytes,
+        caption: str | None = None,
+    ) -> None: ...
+
 
 @dataclass(frozen=True)
 class HandleResult:
@@ -46,9 +54,13 @@ class UpdateHandler:
             if record_result is RecordUpdateResult.DUPLICATE:
                 return HandleResult(processed=False, replied=False)
 
+        owner_telegram_user_id = (
+            message.from_user.id if message.from_user is not None else message.chat.id
+        )
         reply_text = await self._agent.reply(
             chat_id=message.chat.id,
             owner_message=message.text,
+            owner_telegram_user_id=owner_telegram_user_id,
         )
         await self._message_sender.send_text(
             chat_id=message.chat.id,
@@ -66,3 +78,21 @@ class TelegramMessageSender:
 
         if isinstance(self._bot, Bot):
             await self._bot.send_message(chat_id=chat_id, text=text)
+
+    async def send_document(
+        self,
+        chat_id: int,
+        filename: str,
+        data: bytes,
+        caption: str | None = None,
+    ) -> None:
+        from aiogram import Bot
+        from aiogram.types import BufferedInputFile
+
+        if isinstance(self._bot, Bot):
+            document = BufferedInputFile(file=data, filename=filename)
+            await self._bot.send_document(
+                chat_id=chat_id,
+                document=document,
+                caption=caption,
+            )
