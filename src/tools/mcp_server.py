@@ -1,4 +1,4 @@
-"""MCP server factories for inventory and billing tools."""
+"""MCP server factories for inventory, billing, and khata tools."""
 
 from typing import Any
 
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.tools.billing_tools import build_billing_tools
 from src.tools.inventory_tools import build_inventory_tools
+from src.tools.khata_tools import build_khata_tools
 
 INVENTORY_ALLOWED_TOOLS = [
     "mcp__inventory__find_product",
@@ -25,7 +26,16 @@ BILLING_ALLOWED_TOOLS = [
     "mcp__billing__finalize_bill",
 ]
 
-ALL_STORE_ALLOWED_TOOLS = INVENTORY_ALLOWED_TOOLS + BILLING_ALLOWED_TOOLS
+KHATA_ALLOWED_TOOLS = [
+    "mcp__khata__find_or_create_customer",
+    "mcp__khata__add_khata_charge",
+    "mcp__khata__record_payment",
+    "mcp__khata__get_khata_balance",
+]
+
+ALL_STORE_ALLOWED_TOOLS = (
+    INVENTORY_ALLOWED_TOOLS + BILLING_ALLOWED_TOOLS + KHATA_ALLOWED_TOOLS
+)
 
 
 def create_inventory_mcp_server(
@@ -45,6 +55,17 @@ def create_billing_mcp_server(
     tools = build_billing_tools(session_factory)
     return create_sdk_mcp_server(
         name="billing",
+        version="1.0.0",
+        tools=tools,
+    )
+
+
+def create_khata_mcp_server(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
+    tools = build_khata_tools(session_factory)
+    return create_sdk_mcp_server(
+        name="khata",
         version="1.0.0",
         tools=tools,
     )

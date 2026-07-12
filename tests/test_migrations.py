@@ -68,4 +68,15 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
 
     assert asyncio.run(assert_billing_tables_exist())
 
+    async def assert_khata_tables_exist() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            customers = await table_exists(engine, "customers")
+            khata_entries = await table_exists(engine, "khata_entries")
+            return customers and khata_entries
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_khata_tables_exist())
+
     command.upgrade(config, "head")

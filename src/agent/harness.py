@@ -17,18 +17,23 @@ from src.bot.context import current_chat_id
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 INVENTORY_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "inventory.md"
 BILLING_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "billing.md"
+KHATA_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "khata.md"
 
 BASE_SYSTEM_PROMPT = (
     "You are a helpful assistant for an Indian kirana (grocery) store owner. "
     "The owner messages you from Telegram in plain language. "
-    "Reply concisely and helpfully using inventory and billing tools when relevant."
+    "Reply concisely and helpfully using inventory, billing, and khata tools "
+    "when relevant."
 )
 
 
 def load_system_prompt() -> str:
     inventory_skill = INVENTORY_SKILL_PATH.read_text(encoding="utf-8")
     billing_skill = BILLING_SKILL_PATH.read_text(encoding="utf-8")
-    return f"{BASE_SYSTEM_PROMPT}\n\n{inventory_skill}\n\n{billing_skill}"
+    khata_skill = KHATA_SKILL_PATH.read_text(encoding="utf-8")
+    return (
+        f"{BASE_SYSTEM_PROMPT}\n\n{inventory_skill}\n\n{billing_skill}\n\n{khata_skill}"
+    )
 
 
 class AgentHarness(Protocol):

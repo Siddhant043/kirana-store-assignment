@@ -19,6 +19,7 @@ from src.db.models import (
     StockLedger,
 )
 from src.domain.inventory import ProductNotFoundError
+from src.domain.khata import CustomerNotFoundError, KhataService, lock_customer
 from src.domain.pricing import LinePricing, compute_bill_totals, compute_line_pricing
 from src.domain.stock import lock_products_sorted
 
@@ -219,11 +220,18 @@ class BillingService:
         payment_mode: str,
         *,
         confirm_below_cost: bool = False,
+        customer_id: int | None = None,
     ) -> FinalizeBillResult | RefusedResult | RequiresConfirmationResult:
         if payment_mode not in VALID_PAYMENT_MODES:
             return RefusedResult(
                 status="refused",
                 reason="invalid_payment_mode",
+                details={"payment_mode": payment_mode},
+            )
+        if payment_mode == "khata" and customer_id is None:
+            return RefusedResult(
+                status="refused",
+                reason="customer_required",
                 details={"payment_mode": payment_mode},
             )
 
@@ -255,6 +263,16 @@ class BillingService:
 
         product_ids = [line.product_id for line in draft_lines]
         locked_products = await lock_products_sorted(self._session, product_ids)
+
+        if payment_mode == "khata" and customer_id is not None:
+            try:
+                await lock_customer(self._session, customer_id)
+            except CustomerNotFoundError:
+                return RefusedResult(
+                    status="refused",
+                    reason="customer_not_found",
+                    details={"customer_id": customer_id},
+                )
 
         below_cost_lines = [
             BelowCostLine(
@@ -361,6 +379,15 @@ class BillingService:
         draft.status = "finalized"
         draft.bill_id = bill.bill_id
         draft.updated_at = datetime.now(tz=UTC)
+
+        if payment_mode == "khata" and customer_id is not None:
+            khata_service = KhataService(self._session)
+            await khata_service.append_bill_charge(
+                customer_id,
+                bill.bill_id,
+                bill.total_paise,
+            )
+
         await self._session.flush()
 
         return FinalizeBillResult(

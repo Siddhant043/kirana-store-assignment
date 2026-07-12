@@ -23,6 +23,7 @@ UnitType = Literal["packaged", "loose"]
 StockLedgerReason = Literal["stock_in", "sale", "adjustment"]
 DraftBillStatus = Literal["open", "finalized"]
 PaymentMode = Literal["cash", "upi", "card", "khata"]
+KhataEntryType = Literal["charge", "payment"]
 
 
 class Base(DeclarativeBase):
@@ -283,3 +284,64 @@ class InvoiceCounter(Base):
 
     counter_date: Mapped[date] = mapped_column(Date, primary_key=True)
     last_seq: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    customer_id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    khata_entries: Mapped[list["KhataEntry"]] = relationship(
+        back_populates="customer",
+    )
+
+
+class KhataEntry(Base):
+    __tablename__ = "khata_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "entry_type IN ('charge', 'payment')",
+            name="ck_khata_entries_entry_type",
+        ),
+        CheckConstraint(
+            "amount_paise > 0",
+            name="ck_khata_entries_amount_positive",
+        ),
+    )
+
+    khata_entry_id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    customer_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("customers.customer_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    entry_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    bill_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bills.bill_id"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    customer: Mapped[Customer] = relationship(back_populates="khata_entries")
+    bill: Mapped[Bill | None] = relationship()
