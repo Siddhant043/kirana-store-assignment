@@ -1,6 +1,7 @@
 """Telegram update handler with transport-level idempotency."""
 
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Protocol
 
 from aiogram.types import Update
@@ -9,6 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.agent.harness import AgentHarness
 from src.db.processed_updates import ProcessedUpdatesStore, RecordUpdateResult
 from src.db.session import session_scope
+from src.domain.voice import VoiceTranscriber
+
+VOICE_TRANSCRIPTION_FAILURE_MESSAGE = (
+    "Sorry — I could not understand that voice note. "
+    "Please try again, or type the order as text."
+)
 
 
 class MessageSender(Protocol):
@@ -23,6 +30,10 @@ class MessageSender(Protocol):
     ) -> None: ...
 
 
+class VoiceAudioDownloader(Protocol):
+    async def download_voice(self, file_id: str) -> bytes: ...
+
+
 @dataclass(frozen=True)
 class HandleResult:
     processed: bool
@@ -35,17 +46,23 @@ class UpdateHandler:
         session_factory: async_sessionmaker[AsyncSession],
         agent: AgentHarness,
         message_sender: MessageSender,
+        voice_downloader: VoiceAudioDownloader,
+        transcriber: VoiceTranscriber,
     ) -> None:
         self._session_factory = session_factory
         self._agent = agent
         self._message_sender = message_sender
+        self._voice_downloader = voice_downloader
+        self._transcriber = transcriber
 
     async def handle(self, update: Update) -> HandleResult:
         if update.update_id is None:
             return HandleResult(processed=False, replied=False)
 
         message = update.message
-        if message is None or message.text is None or message.chat is None:
+        if message is None or message.chat is None:
+            return HandleResult(processed=False, replied=False)
+        if message.text is None and message.voice is None:
             return HandleResult(processed=False, replied=False)
 
         async with session_scope(self._session_factory) as session:
@@ -58,7 +75,24 @@ class UpdateHandler:
             message.from_user.id if message.from_user is not None else message.chat.id
         )
 
-        if message.text.strip().lower() == "/new":
+        owner_message: str | None
+        if message.voice is not None:
+            audio_bytes = await self._voice_downloader.download_voice(
+                message.voice.file_id
+            )
+            transcription = await self._transcriber.transcribe(audio_bytes)
+            if transcription.status != "ok" or transcription.text is None:
+                await self._message_sender.send_text(
+                    chat_id=message.chat.id,
+                    text=VOICE_TRANSCRIPTION_FAILURE_MESSAGE,
+                )
+                return HandleResult(processed=True, replied=True)
+            owner_message = transcription.text
+        else:
+            # Text path: early guard requires text or voice.
+            owner_message = message.text or ""
+
+        if owner_message.strip().lower() == "/new":
             self._agent.clear_session(message.chat.id)
             await self._message_sender.send_text(
                 chat_id=message.chat.id,
@@ -71,7 +105,7 @@ class UpdateHandler:
 
         reply_text = await self._agent.reply(
             chat_id=message.chat.id,
-            owner_message=message.text,
+            owner_message=owner_message,
             owner_telegram_user_id=owner_telegram_user_id,
         )
         await self._message_sender.send_text(
@@ -108,3 +142,22 @@ class TelegramMessageSender:
                 document=document,
                 caption=caption,
             )
+
+
+class TelegramVoiceDownloader:
+    def __init__(self, bot: object) -> None:
+        self._bot = bot
+
+    async def download_voice(self, file_id: str) -> bytes:
+        from aiogram import Bot
+
+        if not isinstance(self._bot, Bot):
+            msg = "TelegramVoiceDownloader requires an aiogram Bot"
+            raise TypeError(msg)
+        file = await self._bot.get_file(file_id)
+        if file.file_path is None:
+            msg = "Telegram voice file path is missing"
+            raise ValueError(msg)
+        buffer = BytesIO()
+        await self._bot.download_file(file.file_path, destination=buffer)
+        return buffer.getvalue()

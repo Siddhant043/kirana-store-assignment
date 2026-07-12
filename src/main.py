@@ -11,9 +11,14 @@ from alembic.config import Config
 
 from alembic import command
 from src.agent.harness import ClaudeAgentHarness
-from src.bot.handler import TelegramMessageSender, UpdateHandler
+from src.bot.handler import (
+    TelegramMessageSender,
+    TelegramVoiceDownloader,
+    UpdateHandler,
+)
 from src.config import Settings, load_settings
 from src.db.session import create_engine, create_session_factory
+from src.domain.voice import WhisperTranscriber
 from src.tools.mcp_server import (
     ALL_STORE_ALLOWED_TOOLS,
     create_analytics_mcp_server,
@@ -54,6 +59,12 @@ def build_handler(settings: Settings) -> tuple[Bot, UpdateHandler]:
     session_factory = create_session_factory(engine)
     bot = Bot(token=settings.telegram_bot_token)
     message_sender = TelegramMessageSender(bot)
+    voice_downloader = TelegramVoiceDownloader(bot)
+    transcriber = WhisperTranscriber(
+        api_key=settings.whisper_api_key,
+        api_base_url=settings.whisper_api_base_url,
+        model=settings.whisper_model,
+    )
     inventory_server = create_inventory_mcp_server(session_factory)
     billing_server = create_billing_mcp_server(session_factory)
     khata_server = create_khata_mcp_server(session_factory)
@@ -78,6 +89,8 @@ def build_handler(settings: Settings) -> tuple[Bot, UpdateHandler]:
         session_factory=session_factory,
         agent=agent,
         message_sender=message_sender,
+        voice_downloader=voice_downloader,
+        transcriber=transcriber,
     )
     return bot, handler
 
