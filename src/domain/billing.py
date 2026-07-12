@@ -16,13 +16,15 @@ from src.db.models import (
     DraftLine,
     InvoiceCounter,
     Product,
+    StockBatch,
     StockLedger,
 )
 from src.domain.inventory import ProductNotFoundError
 from src.domain.khata import CustomerNotFoundError, KhataService, lock_customer
 from src.domain.preferences import PreferencesService
 from src.domain.pricing import LinePricing, compute_bill_totals, compute_line_pricing
-from src.domain.stock import lock_products_sorted
+from src.domain.shop_time import today_ist
+from src.domain.stock import lock_batches_sorted, lock_products_sorted
 
 PaymentMode = Literal["cash", "upi", "card", "khata"]
 VALID_PAYMENT_MODES = frozenset({"cash", "upi", "card", "khata"})
@@ -296,9 +298,18 @@ class BillingService:
                 lines=below_cost_lines,
             )
 
+        batch_ids = await self._batch_ids_for_products(product_ids)
+        locked_batches = await lock_batches_sorted(self._session, batch_ids)
+        batches_by_product = _group_batches_by_product(locked_batches)
+        as_of = today_ist()
+
         for line in draft_lines:
             product = locked_products[line.product_id]
-            if product.quantity < line.quantity:
+            available = _sellable_quantity(
+                batches_by_product.get(line.product_id, []),
+                as_of,
+            )
+            if available < line.quantity:
                 return RefusedResult(
                     status="refused",
                     reason="oversell",
@@ -306,7 +317,11 @@ class BillingService:
                         "product_id": line.product_id,
                         "name": product.name,
                         "requested": str(line.quantity),
-                        "available": str(product.quantity),
+                        "available": str(available),
+                        "explanation": (
+                            "Sellable stock is the sum of non-expired Batches; "
+                            "expired Batches are excluded."
+                        ),
                     },
                 )
 
@@ -357,17 +372,35 @@ class BillingService:
             )
 
             locked_product = locked_products[product.product_id]
-            new_quantity = locked_product.quantity - line.quantity
-            locked_product.quantity = new_quantity
-            self._session.add(
-                StockLedger(
-                    product_id=product.product_id,
-                    delta=-line.quantity,
-                    reason="sale",
-                    ref_id=bill.bill_id,
-                    balance_after=new_quantity,
-                )
+            remaining = line.quantity
+            product_batches = _fefo_sorted_batches(
+                batches_by_product.get(product.product_id, []),
+                as_of,
             )
+            for batch in product_batches:
+                if remaining <= 0:
+                    break
+                if batch.batch_qty <= 0:
+                    continue
+                take = min(batch.batch_qty, remaining)
+                batch.batch_qty -= take
+                remaining -= take
+                locked_product.quantity -= take
+                self._session.add(
+                    StockLedger(
+                        product_id=product.product_id,
+                        delta=-take,
+                        reason="sale",
+                        ref_id=bill.bill_id,
+                        balance_after=locked_product.quantity,
+                    )
+                )
+            if remaining > 0:
+                msg = (
+                    f"FEFO invariant broken for product_id={product.product_id}: "
+                    f"{remaining} unallocated after sellable check"
+                )
+                raise RuntimeError(msg)
             bill_line_payloads.append(
                 {
                     "product_id": product.product_id,
@@ -407,6 +440,17 @@ class BillingService:
             lines=bill_line_payloads,
             idempotent_replay=False,
         )
+
+    async def _batch_ids_for_products(self, product_ids: list[int]) -> list[int]:
+        if not product_ids:
+            return []
+        result = await self._session.execute(
+            select(StockBatch.batch_id).where(
+                StockBatch.product_id.in_(sorted(set(product_ids))),
+                StockBatch.batch_qty > 0,
+            )
+        )
+        return [int(batch_id) for batch_id in result.scalars().all()]
 
     async def _existing_finalize_result(
         self,
@@ -607,6 +651,38 @@ class BillingService:
         if product.unit_type == "packaged" and quantity != quantity.to_integral_value():
             return "packaged_quantity_must_be_integer"
         return None
+
+
+def _is_non_expired(batch: StockBatch, as_of: date) -> bool:
+    return batch.expiry_date is None or batch.expiry_date >= as_of
+
+
+def _sellable_quantity(batches: list[StockBatch], as_of: date) -> Decimal:
+    return sum(
+        (batch.batch_qty for batch in batches if _is_non_expired(batch, as_of)),
+        Decimal("0"),
+    )
+
+
+def _group_batches_by_product(
+    locked_batches: dict[int, StockBatch],
+) -> dict[int, list[StockBatch]]:
+    grouped: dict[int, list[StockBatch]] = {}
+    for batch in locked_batches.values():
+        grouped.setdefault(batch.product_id, []).append(batch)
+    return grouped
+
+
+def _fefo_sorted_batches(batches: list[StockBatch], as_of: date) -> list[StockBatch]:
+    sellable = [batch for batch in batches if _is_non_expired(batch, as_of)]
+    return sorted(
+        sellable,
+        key=lambda batch: (
+            batch.expiry_date is None,
+            batch.expiry_date or date.max,
+            batch.batch_id,
+        ),
+    )
 
 
 def serialize_open_draft_result(result: OpenDraftBillResult) -> dict[str, object]:

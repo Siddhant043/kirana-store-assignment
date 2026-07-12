@@ -86,6 +86,9 @@ class Product(Base):
     stock_ledger_entries: Mapped[list["StockLedger"]] = relationship(
         back_populates="product",
     )
+    stock_batches: Mapped[list["StockBatch"]] = relationship(
+        back_populates="product",
+    )
 
 
 class Alias(Base):
@@ -104,6 +107,37 @@ class Alias(Base):
     alias: Mapped[str] = mapped_column(Text, nullable=False)
 
     product: Mapped[Product] = relationship(back_populates="aliases")
+
+
+class StockBatch(Base):
+    __tablename__ = "stock_batches"
+    __table_args__ = (
+        CheckConstraint(
+            "batch_qty >= 0",
+            name="ck_stock_batches_batch_qty",
+        ),
+    )
+
+    batch_id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    product_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("products.product_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    batch_qty: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    cost_price_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    product: Mapped[Product] = relationship(back_populates="stock_batches")
 
 
 class StockLedger(Base):

@@ -1,17 +1,20 @@
 """Inventory domain logic: Product lookup, stock-in, and stock queries."""
 
 from dataclasses import asdict, dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Product, StockLedger
+from src.db.models import Product, StockBatch, StockLedger
+from src.domain.shop_time import today_ist
 
 FindProductStatus = Literal["ok", "ambiguous", "refused"]
 MIN_MATCH_SCORE = 0.25
 AMBIGUITY_SCORE_DELTA = 0.08
+DEFAULT_EXPIRING_SOON_DAYS = 7
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class ReceiveStockResult:
     product_id: int
     quantity_after: str
     ledger_id: int
+    batch_id: int
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,24 @@ class LowStockProduct:
 class ListLowStockResult:
     status: Literal["ok"]
     products: list[LowStockProduct]
+
+
+@dataclass(frozen=True)
+class ExpiringBatch:
+    batch_id: int
+    product_id: int
+    name: str
+    batch_qty: str
+    expiry_date: str
+    cost_price_paise: int
+
+
+@dataclass(frozen=True)
+class ListExpiringSoonResult:
+    status: Literal["ok"]
+    within_days: int
+    as_of_date: str
+    batches: list[ExpiringBatch]
 
 
 class ProductNotFoundError(Exception):
@@ -205,22 +227,33 @@ class InventoryService:
         product_id: int,
         quantity: Decimal,
         cost_price_paise: int | None = None,
+        expiry_date: date | None = None,
     ) -> ReceiveStockResult:
         if quantity <= 0:
             msg = "quantity must be positive"
             raise ValueError(msg)
 
         product = await self._lock_product(product_id)
-        new_quantity = product.quantity + quantity
-        product.quantity = new_quantity
-        if cost_price_paise is not None:
-            product.cost_price_paise = cost_price_paise
+        batch_cost = (
+            cost_price_paise
+            if cost_price_paise is not None
+            else product.cost_price_paise
+        )
+        batch = StockBatch(
+            product_id=product_id,
+            batch_qty=quantity,
+            cost_price_paise=batch_cost,
+            expiry_date=expiry_date,
+        )
+        self._session.add(batch)
+        await self._session.flush()
 
+        new_quantity = await self._reconcile_product_quantity(product)
         ledger_entry = StockLedger(
             product_id=product_id,
             delta=quantity,
             reason="stock_in",
-            ref_id=None,
+            ref_id=batch.batch_id,
             balance_after=new_quantity,
         )
         self._session.add(ledger_entry)
@@ -231,6 +264,7 @@ class InventoryService:
             product_id=product_id,
             quantity_after=str(new_quantity),
             ledger_id=ledger_entry.ledger_id,
+            batch_id=batch.batch_id,
         )
 
     async def get_stock(self, product_id: int) -> GetStockResult:
@@ -262,6 +296,56 @@ class InventoryService:
             for product in result.scalars().all()
         ]
         return ListLowStockResult(status="ok", products=products)
+
+    async def list_expiring_soon(
+        self,
+        within_days: int = DEFAULT_EXPIRING_SOON_DAYS,
+    ) -> ListExpiringSoonResult:
+        if within_days < 0:
+            msg = "within_days must be non-negative"
+            raise ValueError(msg)
+        as_of = today_ist()
+        end_date = as_of + timedelta(days=within_days)
+        result = await self._session.execute(
+            select(StockBatch, Product.name)
+            .join(Product, Product.product_id == StockBatch.product_id)
+            .where(
+                StockBatch.expiry_date.is_not(None),
+                StockBatch.expiry_date >= as_of,
+                StockBatch.expiry_date <= end_date,
+                StockBatch.batch_qty > 0,
+            )
+            .order_by(StockBatch.expiry_date.asc(), StockBatch.batch_id.asc())
+        )
+        batches = [
+            ExpiringBatch(
+                batch_id=batch.batch_id,
+                product_id=batch.product_id,
+                name=name,
+                batch_qty=str(batch.batch_qty),
+                expiry_date=batch.expiry_date.isoformat()
+                if batch.expiry_date is not None
+                else "",
+                cost_price_paise=batch.cost_price_paise,
+            )
+            for batch, name in result.all()
+        ]
+        return ListExpiringSoonResult(
+            status="ok",
+            within_days=within_days,
+            as_of_date=as_of.isoformat(),
+            batches=batches,
+        )
+
+    async def _reconcile_product_quantity(self, product: Product) -> Decimal:
+        result = await self._session.execute(
+            select(func.coalesce(func.sum(StockBatch.batch_qty), 0)).where(
+                StockBatch.product_id == product.product_id
+            )
+        )
+        total = Decimal(str(result.scalar_one()))
+        product.quantity = total
+        return total
 
     async def _lock_product(self, product_id: int) -> Product:
         result = await self._session.execute(
@@ -314,4 +398,15 @@ def serialize_list_low_stock_result(result: ListLowStockResult) -> dict[str, obj
     return {
         "status": result.status,
         "products": [asdict(product) for product in result.products],
+    }
+
+
+def serialize_list_expiring_soon_result(
+    result: ListExpiringSoonResult,
+) -> dict[str, object]:
+    return {
+        "status": result.status,
+        "within_days": result.within_days,
+        "as_of_date": result.as_of_date,
+        "batches": [asdict(batch) for batch in result.batches],
     }

@@ -18,6 +18,7 @@ INVENTORY_ALLOWED_TOOLS = [
     "mcp__inventory__receive_stock",
     "mcp__inventory__get_stock",
     "mcp__inventory__list_low_stock",
+    "mcp__inventory__list_expiring_soon",
 ]
 
 BILLING_ALLOWED_TOOLS = [

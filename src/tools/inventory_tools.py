@@ -1,6 +1,7 @@
 """Inventory MCP tool handlers."""
 
 import json
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -13,6 +14,7 @@ from src.domain.inventory import (
     serialize_add_product_result,
     serialize_find_product_result,
     serialize_get_stock_result,
+    serialize_list_expiring_soon_result,
     serialize_list_low_stock_result,
     serialize_receive_stock_result,
 )
@@ -82,8 +84,10 @@ def build_inventory_tools(
 
     @tool(
         "receive_stock",
-        "Receive stock for a grounded product_id. "
-        "Appends a Stock Ledger row and updates quantity.",
+        "Receive stock for a grounded product_id as a new Batch "
+        "(optional cost_price_paise and expiry_date YYYY-MM-DD). "
+        "Null expiry = non-perishable/loose. Appends a Stock Ledger row "
+        "and reconciles Product.quantity.",
         {
             "product_id": int,
             "quantity": float,
@@ -96,6 +100,10 @@ def build_inventory_tools(
             cost_price_paise = cost_price_raw
         elif isinstance(cost_price_raw, float):
             cost_price_paise = int(cost_price_raw)
+        expiry_raw = args.get("expiry_date")
+        expiry_date: date | None = None
+        if isinstance(expiry_raw, str) and expiry_raw.strip():
+            expiry_date = date.fromisoformat(expiry_raw.strip())
         async with session_factory() as session:
             async with session.begin():
                 service = InventoryService(session)
@@ -104,6 +112,7 @@ def build_inventory_tools(
                         product_id=int(args["product_id"]),
                         quantity=Decimal(str(args["quantity"])),
                         cost_price_paise=cost_price_paise,
+                        expiry_date=expiry_date,
                     )
                 except ProductNotFoundError as error:
                     return _tool_response(
@@ -147,10 +156,34 @@ def build_inventory_tools(
                 result = await service.list_low_stock()
                 return _tool_response(serialize_list_low_stock_result(result))
 
+    @tool(
+        "list_expiring_soon",
+        "List Batches with expiry_date within the next N IST days "
+        "(default 7). Use for 'what's expiring soon?'.",
+        {
+            "within_days": int,
+        },
+    )
+    async def list_expiring_soon_tool(args: dict[str, Any]) -> dict[str, Any]:
+        within_raw = args.get("within_days")
+        within_days = int(within_raw) if within_raw is not None else 7
+        async with session_factory() as session:
+            async with session.begin():
+                service = InventoryService(session)
+                try:
+                    result = await service.list_expiring_soon(within_days=within_days)
+                except ValueError as error:
+                    return _tool_response(
+                        {"status": "refused", "reason": str(error)},
+                        is_error=True,
+                    )
+                return _tool_response(serialize_list_expiring_soon_result(result))
+
     return [
         find_product_tool,
         add_product_tool,
         receive_stock_tool,
         get_stock_tool,
         list_low_stock_tool,
+        list_expiring_soon_tool,
     ]
