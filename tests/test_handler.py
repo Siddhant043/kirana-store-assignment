@@ -231,7 +231,7 @@ async def test_voice_note_reaches_same_agent_reply_path_as_text(
     )
 
     text_result = await handler.handle(
-        _text_update(update_id=3001, chat_id=42, text="2kg sugar, 4 Maggi, UPI")
+        _text_update(update_id=3101, chat_id=42, text="2kg sugar, 4 Maggi, UPI")
     )
     text_kwargs = agent.reply.await_args.kwargs
 
@@ -239,7 +239,7 @@ async def test_voice_note_reaches_same_agent_reply_path_as_text(
     sender.sent.clear()
 
     voice_result = await handler.handle(
-        _voice_update(update_id=3002, chat_id=42, file_id="voice-abc")
+        _voice_update(update_id=3102, chat_id=42, file_id="voice-abc")
     )
     voice_kwargs = agent.reply.await_args.kwargs
 
