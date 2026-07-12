@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from alembic import command
 from src.db.session import create_engine
-from tests.conftest import table_exists
+from tests.conftest import table_exists, view_exists
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -78,6 +78,17 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
             await engine.dispose()
 
     assert asyncio.run(assert_khata_tables_exist())
+
+    async def assert_analytics_views_exist() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            daily_summary = await view_exists(engine, "daily_summary")
+            sales_report = await view_exists(engine, "sales_report")
+            return daily_summary and sales_report
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_analytics_views_exist())
 
     async def assert_shop_profile_table_exists() -> bool:
         engine = create_engine(migration_postgres_url)

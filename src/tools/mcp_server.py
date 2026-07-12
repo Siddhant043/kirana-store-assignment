@@ -1,10 +1,11 @@
-"""MCP server factories for inventory, billing, khata, and documents tools."""
+"""MCP server factories for inventory, billing, khata, analytics, and documents."""
 
 from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.tools.analytics_tools import build_analytics_tools
 from src.tools.billing_tools import build_billing_tools
 from src.tools.documents_tools import DocumentSender, build_documents_tools
 from src.tools.inventory_tools import build_inventory_tools
@@ -34,6 +35,11 @@ KHATA_ALLOWED_TOOLS = [
     "mcp__khata__get_khata_balance",
 ]
 
+ANALYTICS_ALLOWED_TOOLS = [
+    "mcp__analytics__daily_close",
+    "mcp__analytics__weekly_sales_report",
+]
+
 DOCUMENTS_ALLOWED_TOOLS = [
     "mcp__documents__set_shop_profile",
     "mcp__documents__get_shop_profile",
@@ -45,6 +51,7 @@ ALL_STORE_ALLOWED_TOOLS = (
     INVENTORY_ALLOWED_TOOLS
     + BILLING_ALLOWED_TOOLS
     + KHATA_ALLOWED_TOOLS
+    + ANALYTICS_ALLOWED_TOOLS
     + DOCUMENTS_ALLOWED_TOOLS
 )
 
@@ -77,6 +84,17 @@ def create_khata_mcp_server(
     tools = build_khata_tools(session_factory)
     return create_sdk_mcp_server(
         name="khata",
+        version="1.0.0",
+        tools=tools,
+    )
+
+
+def create_analytics_mcp_server(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
+    tools = build_analytics_tools(session_factory)
+    return create_sdk_mcp_server(
+        name="analytics",
         version="1.0.0",
         tools=tools,
     )
