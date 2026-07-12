@@ -18,12 +18,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 INVENTORY_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "inventory.md"
 BILLING_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "billing.md"
 KHATA_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "khata.md"
+ANALYTICS_SKILL_PATH = PROJECT_ROOT / "docs" / "agents" / "analytics.md"
 
 BASE_SYSTEM_PROMPT = (
     "You are a helpful assistant for an Indian kirana (grocery) store owner. "
     "The owner messages you from Telegram in plain language. "
-    "Reply concisely and helpfully using inventory, billing, and khata tools "
-    "when relevant."
+    "Reply concisely and helpfully using inventory, billing, khata, and "
+    "analytics tools when relevant."
 )
 
 
@@ -31,8 +32,10 @@ def load_system_prompt() -> str:
     inventory_skill = INVENTORY_SKILL_PATH.read_text(encoding="utf-8")
     billing_skill = BILLING_SKILL_PATH.read_text(encoding="utf-8")
     khata_skill = KHATA_SKILL_PATH.read_text(encoding="utf-8")
+    analytics_skill = ANALYTICS_SKILL_PATH.read_text(encoding="utf-8")
     return (
-        f"{BASE_SYSTEM_PROMPT}\n\n{inventory_skill}\n\n{billing_skill}\n\n{khata_skill}"
+        f"{BASE_SYSTEM_PROMPT}\n\n{inventory_skill}\n\n{billing_skill}\n\n"
+        f"{khata_skill}\n\n{analytics_skill}"
     )
 
 

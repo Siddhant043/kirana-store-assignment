@@ -98,3 +98,17 @@ async def table_exists(engine: AsyncEngine, table_name: str) -> bool:
             {"name": table_name},
         )
         return bool(result.scalar())
+
+
+async def view_exists(engine: AsyncEngine, view_name: str) -> bool:
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM information_schema.views "
+                "WHERE table_schema = 'public' AND table_name = :name"
+                ")"
+            ),
+            {"name": view_name},
+        )
+        return bool(result.scalar())
