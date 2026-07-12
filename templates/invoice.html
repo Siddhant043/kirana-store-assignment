@@ -6,9 +6,15 @@
   <style>
     @page { size: A4; margin: 18mm; }
     body {
-      font-family: "Noto Sans", "DejaVu Sans", sans-serif;
+      /* Noto first (Docker). Mukta/Tiro fall back for local macOS pytest hosts. */
+      font-family: "Noto Sans Devanagari", "Noto Sans Tamil", "Noto Sans",
+        "Mukta", "Tiro Devanagari Hindi", "DejaVu Sans", sans-serif;
       font-size: 11pt;
       color: #111;
+    }
+    .free-text {
+      font-family: "Noto Sans Devanagari", "Noto Sans Tamil", "Noto Sans",
+        "Mukta", "Tiro Devanagari Hindi", "DejaVu Sans", sans-serif;
     }
     h1 { font-size: 18pt; margin: 0 0 4pt 0; }
     h2 { font-size: 14pt; margin: 16pt 0 8pt 0; }
@@ -44,9 +50,9 @@
     {% if invoice.logo_url %}
     <img class="logo" src="{{ invoice.logo_url }}" alt="" />
     {% endif %}
-    <h1>{{ invoice.shop_name }}</h1>
+    <h1 class="free-text">{{ invoice.shop_name }}</h1>
     {% if invoice.shop_address %}
-    <div class="muted">{{ invoice.shop_address }}</div>
+    <div class="muted free-text">{{ invoice.shop_address }}</div>
     {% endif %}
     {% if invoice.shop_gstin %}
     <div class="muted">GSTIN: {{ invoice.shop_gstin }}</div>
@@ -72,7 +78,7 @@
     <tbody>
       {% for line in invoice.lines %}
       <tr>
-        <td>{{ line.product_name }}</td>
+        <td class="free-text">{{ line.product_name }}</td>
         <td>{{ line.hsn_code }}</td>
         <td class="num">{{ line.quantity }}</td>
         <td class="num">{{ line.mrp_paise | paise }}</td>
@@ -134,7 +140,7 @@
   <h2>Payment</h2>
   <div>Payment Mode: {{ invoice.payment_mode }}</div>
   {% if invoice.payment_reference %}
-  <div>Khata Customer: {{ invoice.payment_reference }}</div>
+  <div>Khata Customer: <span class="free-text">{{ invoice.payment_reference }}</span></div>
   {% endif %}
 </body>
 </html>
