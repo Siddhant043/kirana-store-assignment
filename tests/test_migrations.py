@@ -108,4 +108,13 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
 
     assert asyncio.run(assert_preferences_table_exists())
 
+    async def assert_sent_jobs_table_exists() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            return await table_exists(engine, "sent_jobs")
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_sent_jobs_table_exists())
+
     command.upgrade(config, "head")

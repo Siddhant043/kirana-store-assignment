@@ -8,12 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.bot.context import require_chat_id, require_owner_user_id
 from src.db.models import Bill
-from src.domain.analysis_deck import (
-    compose_insights,
-    gather_analysis_deck_data,
-    generate_analysis_deck,
-)
-from src.domain.doc_gen import run_cpu_bound
+from src.domain.analysis_deck_delivery import send_weekly_analysis_deck_to_chat
 from src.domain.invoice import (
     InvoiceRefusedResult,
     InvoiceService,
@@ -178,32 +173,20 @@ def build_documents_tools(
         chat_id = require_chat_id()
         day_count = int(args["day_count"]) if args.get("day_count") is not None else 7
         async with session_factory() as session:
-            deck_data = await gather_analysis_deck_data(session, day_count=day_count)
-            insights_text = compose_insights(deck_data)
-            pptx_bytes = await run_cpu_bound(
-                generate_analysis_deck,
-                deck_data,
-                insights_text,
-            )
-            filename = (
-                f"analysis-{deck_data.period_start}-to-{deck_data.period_end}.pptx"
-            )
-            await message_sender.send_document(
-                chat_id=chat_id,
-                filename=filename,
-                data=pptx_bytes,
-                caption=(
-                    f"Analysis deck {deck_data.period_start} to {deck_data.period_end}"
-                ),
+            delivery = await send_weekly_analysis_deck_to_chat(
+                session,
+                message_sender,
+                chat_id,
+                day_count=day_count,
             )
             return _tool_response(
                 {
-                    "status": "ok",
-                    "filename": filename,
-                    "period_start": deck_data.period_start,
-                    "period_end": deck_data.period_end,
-                    "bill_count": deck_data.bill_count,
-                    "total_sales_paise": deck_data.total_sales_paise,
+                    "status": delivery.status,
+                    "filename": delivery.filename,
+                    "period_start": delivery.period_start,
+                    "period_end": delivery.period_end,
+                    "bill_count": delivery.bill_count,
+                    "total_sales_paise": delivery.total_sales_paise,
                 }
             )
 

@@ -1,6 +1,7 @@
 """Preferences MCP tool handlers for Owner standing defaults."""
 
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from claude_agent_sdk import tool
@@ -8,12 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.bot.context import require_owner_user_id
 from src.domain.preferences import (
+    WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY,
     PreferenceRefusedResult,
     PreferencesService,
     serialize_list_preferences_result,
     serialize_preference_refused_result,
     serialize_set_preference_result,
 )
+
+ScheduleChangedCallback = Callable[[], Awaitable[None]]
 
 
 def _tool_response(
@@ -31,12 +35,13 @@ def _tool_response(
 
 def build_preferences_tools(
     session_factory: async_sessionmaker[AsyncSession],
+    *,
+    on_schedule_changed: ScheduleChangedCallback | None = None,
 ) -> list[Any]:
     @tool(
         "set_preference",
-        "Persist an Owner Preference (default Payment Mode or preferred Product). "
-        "For preferred products pass preference_key preferred_product:<query> "
-        "and preference_value as the grounded product_id string.",
+        "Persist an Owner Preference (default Payment Mode, preferred Product, "
+        "or weekly_analysis_deck_schedule like 'mon 09:00' IST).",
         {
             "preference_key": str,
             "preference_value": str,
@@ -59,7 +64,12 @@ def build_preferences_tools(
                         serialize_preference_refused_result(result),
                         is_error=True,
                     )
-                return _tool_response(serialize_set_preference_result(result))
+        if (
+            on_schedule_changed is not None
+            and preference_key.strip() == WEEKLY_ANALYSIS_DECK_SCHEDULE_KEY
+        ):
+            await on_schedule_changed()
+        return _tool_response(serialize_set_preference_result(result))
 
     @tool(
         "get_preferences",

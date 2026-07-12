@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.agent.harness import AgentHarness
 from src.db.processed_updates import ProcessedUpdatesStore, RecordUpdateResult
 from src.db.session import session_scope
+from src.domain.preferences import OWNER_CHAT_ID_KEY, PreferencesService
 
 
 class MessageSender(Protocol):
@@ -57,6 +58,14 @@ class UpdateHandler:
         owner_telegram_user_id = (
             message.from_user.id if message.from_user is not None else message.chat.id
         )
+
+        async with session_scope(self._session_factory) as session:
+            preferences = PreferencesService(session)
+            await preferences.set_preference(
+                owner_telegram_user_id,
+                OWNER_CHAT_ID_KEY,
+                str(message.chat.id),
+            )
 
         if message.text.strip().lower() == "/new":
             self._agent.clear_session(message.chat.id)

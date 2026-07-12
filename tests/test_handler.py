@@ -82,6 +82,33 @@ async def test_handler_drops_duplicate_update_without_calling_agent(
 
 
 @pytest.mark.asyncio
+async def test_handler_persists_owner_chat_id(
+    handler_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from src.domain.preferences import (
+        OWNER_CHAT_ID_KEY,
+        GetPreferenceResult,
+        PreferencesService,
+    )
+
+    agent = FakeAgent()
+    sender = FakeMessageSender()
+    handler = UpdateHandler(
+        session_factory=handler_session_factory,
+        agent=agent,
+        message_sender=sender,
+    )
+    await handler.handle(_text_update(update_id=3001, chat_id=777, text="hi"))
+
+    async with handler_session_factory() as session:
+        prefs = PreferencesService(session)
+        # Owner id equals chat id when from_user is absent.
+        got = await prefs.get_preference(777, OWNER_CHAT_ID_KEY)
+    assert isinstance(got, GetPreferenceResult)
+    assert got.preference_value == "777"
+
+
+@pytest.mark.asyncio
 async def test_new_clears_session_without_calling_agent(
     handler_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
