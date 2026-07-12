@@ -8,8 +8,11 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str
     anthropic_api_key: str
+    whisper_api_key: str
     database_url: str = "postgresql+asyncpg://kirana:kirana@localhost:5432/kirana"
     claude_model_id: str = "claude-sonnet-5"
+    whisper_api_base_url: str = "https://api.openai.com/v1"
+    whisper_model: str = "whisper-1"
 
 
 def load_settings() -> Settings:

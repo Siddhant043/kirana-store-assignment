@@ -13,9 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from alembic import command
 from src.agent.harness import ClaudeAgentHarness
-from src.bot.handler import MessageSender, TelegramMessageSender, UpdateHandler
+from src.bot.handler import (
+    MessageSender,
+    TelegramMessageSender,
+    TelegramVoiceDownloader,
+    UpdateHandler,
+)
 from src.config import Settings, load_settings
 from src.db.session import create_engine, create_session_factory
+from src.domain.voice import WhisperTranscriber
 from src.scheduler.lifecycle import (
     create_scheduler,
     refresh_weekly_deck_jobs,
@@ -71,6 +77,12 @@ def build_handler(
     bot = Bot(token=settings.telegram_bot_token)
     message_sender = TelegramMessageSender(bot)
     scheduler = create_scheduler()
+    voice_downloader = TelegramVoiceDownloader(bot)
+    transcriber = WhisperTranscriber(
+        api_key=settings.whisper_api_key,
+        api_base_url=settings.whisper_api_base_url,
+        model=settings.whisper_model,
+    )
 
     async def on_schedule_changed() -> None:
         await refresh_weekly_deck_jobs(scheduler, session_factory, message_sender)
@@ -102,6 +114,8 @@ def build_handler(
         session_factory=session_factory,
         agent=agent,
         message_sender=message_sender,
+        voice_downloader=voice_downloader,
+        transcriber=transcriber,
     )
     return bot, handler, scheduler, session_factory, message_sender
 
