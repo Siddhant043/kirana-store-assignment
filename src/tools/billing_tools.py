@@ -7,7 +7,7 @@ from typing import Any
 from claude_agent_sdk import tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.bot.context import require_chat_id
+from src.bot.context import require_chat_id, require_owner_user_id
 from src.domain.billing import (
     BillingService,
     FinalizeBillResult,
@@ -174,7 +174,8 @@ def build_billing_tools(
 
     @tool(
         "finalize_bill",
-        "Finalize the open Draft Bill into a Bill with payment mode and GST breakup.",
+        "Finalize the open Draft Bill into a Bill with payment mode and GST breakup. "
+        "Omit payment_mode to use the Owner's stored default Payment Mode Preference.",
         {
             "payment_mode": str,
             "confirm_below_cost": bool,
@@ -183,16 +184,22 @@ def build_billing_tools(
     )
     async def finalize_bill_tool(args: dict[str, Any]) -> dict[str, Any]:
         chat_id = require_chat_id()
+        owner_telegram_user_id = require_owner_user_id()
         confirm_below_cost = bool(args.get("confirm_below_cost", False))
         customer_id = args.get("customer_id")
         parsed_customer_id = int(customer_id) if customer_id is not None else None
+        payment_mode_arg = args.get("payment_mode")
+        payment_mode = (
+            str(payment_mode_arg).lower() if payment_mode_arg is not None else None
+        )
         async with session_factory() as session:
             async with session.begin():
                 service = BillingService(session, chat_id)
                 result = await service.finalize_bill(
-                    str(args["payment_mode"]).lower(),
+                    payment_mode,
                     confirm_below_cost=confirm_below_cost,
                     customer_id=parsed_customer_id,
+                    owner_telegram_user_id=owner_telegram_user_id,
                 )
                 is_error = isinstance(result, RefusedResult)
                 return _tool_response(

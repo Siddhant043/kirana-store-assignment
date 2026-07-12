@@ -363,3 +363,17 @@ class ShopProfile(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class Preference(Base):
+    __tablename__ = "preferences"
+
+    owner_telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    preference_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    preference_value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

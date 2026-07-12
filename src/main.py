@@ -21,6 +21,7 @@ from src.tools.mcp_server import (
     create_documents_mcp_server,
     create_inventory_mcp_server,
     create_khata_mcp_server,
+    create_preferences_mcp_server,
 )
 
 logging.basicConfig(
@@ -58,15 +59,18 @@ def build_handler(settings: Settings) -> tuple[Bot, UpdateHandler]:
     khata_server = create_khata_mcp_server(session_factory)
     analytics_server = create_analytics_mcp_server(session_factory)
     documents_server = create_documents_mcp_server(session_factory, message_sender)
+    preferences_server = create_preferences_mcp_server(session_factory)
     agent = ClaudeAgentHarness(
         model_id=settings.claude_model_id,
         anthropic_api_key=settings.anthropic_api_key,
+        session_factory=session_factory,
         mcp_servers={
             "inventory": inventory_server,
             "billing": billing_server,
             "khata": khata_server,
             "analytics": analytics_server,
             "documents": documents_server,
+            "preferences": preferences_server,
         },
         allowed_tools=ALL_STORE_ALLOWED_TOOLS,
     )

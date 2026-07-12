@@ -1,4 +1,4 @@
-"""MCP server factories for inventory, billing, khata, analytics, and documents."""
+"""MCP server factories for store domain tools."""
 
 from typing import Any
 
@@ -10,6 +10,7 @@ from src.tools.billing_tools import build_billing_tools
 from src.tools.documents_tools import DocumentSender, build_documents_tools
 from src.tools.inventory_tools import build_inventory_tools
 from src.tools.khata_tools import build_khata_tools
+from src.tools.preferences_tools import build_preferences_tools
 
 INVENTORY_ALLOWED_TOOLS = [
     "mcp__inventory__find_product",
@@ -48,12 +49,18 @@ DOCUMENTS_ALLOWED_TOOLS = [
     "mcp__documents__send_analysis_deck",
 ]
 
+PREFERENCES_ALLOWED_TOOLS = [
+    "mcp__preferences__set_preference",
+    "mcp__preferences__get_preferences",
+]
+
 ALL_STORE_ALLOWED_TOOLS = (
     INVENTORY_ALLOWED_TOOLS
     + BILLING_ALLOWED_TOOLS
     + KHATA_ALLOWED_TOOLS
     + ANALYTICS_ALLOWED_TOOLS
     + DOCUMENTS_ALLOWED_TOOLS
+    + PREFERENCES_ALLOWED_TOOLS
 )
 
 
@@ -108,6 +115,17 @@ def create_documents_mcp_server(
     tools = build_documents_tools(session_factory, message_sender)
     return create_sdk_mcp_server(
         name="documents",
+        version="1.0.0",
+        tools=tools,
+    )
+
+
+def create_preferences_mcp_server(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
+    tools = build_preferences_tools(session_factory)
+    return create_sdk_mcp_server(
+        name="preferences",
         version="1.0.0",
         tools=tools,
     )
