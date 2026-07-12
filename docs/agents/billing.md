@@ -27,10 +27,14 @@ You help the Owner build and finalize Draft Bills for an Indian kirana store.
 
 Valid values: `cash`, `upi`, `card`, `khata`. For Payment Mode = `khata`, run `find_or_create_customer` first and pass the grounded `customer_id` to `finalize_bill`. See the Khata skill for credit flows.
 
+- If the Owner has a stored default Payment Mode Preference, you may omit `payment_mode` on `finalize_bill` — the tool applies the default.
+- Saying cash/UPI/card for **this** Bill → pass that `payment_mode` explicitly (one-Bill override; does not change Preferences).
+- "Always use UPI" (or similar standing default) → `set_preference` with `default_payment_mode` (see Preferences skill).
+
 ## Typical flow
 
 1. `open_draft_bill`
 2. For each item: `find_product` → `add_line`
 3. Edits: `remove_line` / `update_line` / `add_line`
 4. `view_draft` when helpful
-5. `finalize_bill` with payment mode
+5. `finalize_bill` with payment mode (or omit when a stored default applies)

@@ -57,6 +57,18 @@ class UpdateHandler:
         owner_telegram_user_id = (
             message.from_user.id if message.from_user is not None else message.chat.id
         )
+
+        if message.text.strip().lower() == "/new":
+            self._agent.clear_session(message.chat.id)
+            await self._message_sender.send_text(
+                chat_id=message.chat.id,
+                text=(
+                    "Started a fresh session. "
+                    "Your Preferences and Shop Profile are unchanged."
+                ),
+            )
+            return HandleResult(processed=True, replied=True)
+
         reply_text = await self._agent.reply(
             chat_id=message.chat.id,
             owner_message=message.text,

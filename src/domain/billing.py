@@ -20,6 +20,7 @@ from src.db.models import (
 )
 from src.domain.inventory import ProductNotFoundError
 from src.domain.khata import CustomerNotFoundError, KhataService, lock_customer
+from src.domain.preferences import PreferencesService
 from src.domain.pricing import LinePricing, compute_bill_totals, compute_line_pricing
 from src.domain.stock import lock_products_sorted
 
@@ -217,17 +218,20 @@ class BillingService:
 
     async def finalize_bill(
         self,
-        payment_mode: str,
+        payment_mode: str | None = None,
         *,
         confirm_below_cost: bool = False,
         customer_id: int | None = None,
+        owner_telegram_user_id: int | None = None,
     ) -> FinalizeBillResult | RefusedResult | RequiresConfirmationResult:
-        if payment_mode not in VALID_PAYMENT_MODES:
-            return RefusedResult(
-                status="refused",
-                reason="invalid_payment_mode",
-                details={"payment_mode": payment_mode},
-            )
+        resolved_payment_mode = await self._resolve_payment_mode(
+            payment_mode,
+            owner_telegram_user_id=owner_telegram_user_id,
+        )
+        if isinstance(resolved_payment_mode, RefusedResult):
+            return resolved_payment_mode
+        payment_mode = resolved_payment_mode
+
         if payment_mode == "khata" and customer_id is None:
             return RefusedResult(
                 status="refused",
@@ -475,6 +479,41 @@ class BillingService:
             msg = "no open draft bill for chat"
             raise ValueError(msg)
         return draft
+
+    async def _resolve_payment_mode(
+        self,
+        payment_mode: str | None,
+        *,
+        owner_telegram_user_id: int | None,
+    ) -> str | RefusedResult:
+        if payment_mode is not None:
+            normalized = payment_mode.lower()
+            if normalized not in VALID_PAYMENT_MODES:
+                return RefusedResult(
+                    status="refused",
+                    reason="invalid_payment_mode",
+                    details={"payment_mode": payment_mode},
+                )
+            return normalized
+
+        if owner_telegram_user_id is None:
+            return RefusedResult(
+                status="refused",
+                reason="payment_mode_required",
+                details={},
+            )
+
+        preferences = PreferencesService(self._session)
+        default_mode = await preferences.get_default_payment_mode(
+            owner_telegram_user_id
+        )
+        if default_mode is None:
+            return RefusedResult(
+                status="refused",
+                reason="payment_mode_required",
+                details={},
+            )
+        return default_mode
 
     async def _get_open_draft(self) -> DraftBill | None:
         result = await self._session.execute(

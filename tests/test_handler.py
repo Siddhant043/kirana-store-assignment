@@ -14,6 +14,10 @@ from src.db.session import create_session_factory
 @dataclass
 class FakeAgent:
     reply: AsyncMock = field(default_factory=lambda: AsyncMock(return_value="hello"))
+    cleared_sessions: list[int] = field(default_factory=list)
+
+    def clear_session(self, chat_id: int) -> None:
+        self.cleared_sessions.append(chat_id)
 
 
 class FakeMessageSender(MessageSender):
@@ -75,3 +79,25 @@ async def test_handler_drops_duplicate_update_without_calling_agent(
     assert duplicate_result == HandleResult(processed=False, replied=False)
     assert agent.reply.await_count == 1
     assert sender.sent == [(42, "hello")]
+
+
+@pytest.mark.asyncio
+async def test_new_clears_session_without_calling_agent(
+    handler_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    agent = FakeAgent()
+    sender = FakeMessageSender()
+    handler = UpdateHandler(
+        session_factory=handler_session_factory,
+        agent=agent,
+        message_sender=sender,
+    )
+
+    result = await handler.handle(_text_update(update_id=2001, chat_id=42, text="/new"))
+
+    assert result == HandleResult(processed=True, replied=True)
+    assert agent.reply.await_count == 0
+    assert agent.cleared_sessions == [42]
+    assert len(sender.sent) == 1
+    assert sender.sent[0][0] == 42
+    assert "Preferences" in sender.sent[0][1]
