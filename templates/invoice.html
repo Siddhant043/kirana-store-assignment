@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Invoice {{ invoice.invoice_number }}</title>
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body {
+      font-family: "Noto Sans", "DejaVu Sans", sans-serif;
+      font-size: 11pt;
+      color: #111;
+    }
+    h1 { font-size: 18pt; margin: 0 0 4pt 0; }
+    h2 { font-size: 14pt; margin: 16pt 0 8pt 0; }
+    .muted { color: #444; font-size: 10pt; }
+    .invoice-number { font-size: 16pt; font-weight: bold; margin-top: 12pt; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10pt; }
+    th, td { border: 1px solid #ccc; padding: 6pt 8pt; text-align: left; }
+    th { background: #f3f3f3; font-size: 10pt; }
+    td.num, th.num { text-align: right; }
+    .totals { width: 45%; margin-left: auto; }
+    .totals td { border: none; padding: 4pt 0; }
+    .totals .grand { font-weight: bold; font-size: 12pt; border-top: 1px solid #111; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{ invoice.shop_name }}</h1>
+    {% if invoice.shop_address %}
+    <div class="muted">{{ invoice.shop_address }}</div>
+    {% endif %}
+    {% if invoice.shop_gstin %}
+    <div class="muted">GSTIN: {{ invoice.shop_gstin }}</div>
+    {% endif %}
+    <div class="invoice-number">Invoice {{ invoice.invoice_number }}</div>
+    <div class="muted">Finalized: {{ invoice.finalized_at.isoformat() }}</div>
+  </header>
+
+  <h2>Lines</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th>HSN Code</th>
+        <th class="num">Qty</th>
+        <th class="num">Rate (MRP) ₹</th>
+        <th class="num">Taxable ₹</th>
+        <th class="num">CGST ₹</th>
+        <th class="num">SGST ₹</th>
+        <th class="num">Line Total ₹</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in invoice.lines %}
+      <tr>
+        <td>{{ line.product_name }}</td>
+        <td>{{ line.hsn_code }}</td>
+        <td class="num">{{ line.quantity }}</td>
+        <td class="num">{{ line.mrp_paise | paise }}</td>
+        <td class="num">{{ line.taxable_paise | paise }}</td>
+        <td class="num">{{ line.cgst_paise | paise }}</td>
+        <td class="num">{{ line.sgst_paise | paise }}</td>
+        <td class="num">{{ line.line_total_paise | paise }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Tax breakup by GST Slab</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>GST Slab %</th>
+        <th class="num">Taxable ₹</th>
+        <th class="num">CGST ₹</th>
+        <th class="num">SGST ₹</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in invoice.tax_breakup %}
+      <tr>
+        <td>{{ row.gst_slab }}%</td>
+        <td class="num">{{ row.taxable_paise | paise }}</td>
+        <td class="num">{{ row.cgst_paise | paise }}</td>
+        <td class="num">{{ row.sgst_paise | paise }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Totals</h2>
+  <table class="totals">
+    <tr>
+      <td>Subtotal</td>
+      <td class="num">₹ {{ invoice.subtotal_paise | paise }}</td>
+    </tr>
+    <tr>
+      <td>CGST</td>
+      <td class="num">₹ {{ invoice.cgst_paise | paise }}</td>
+    </tr>
+    <tr>
+      <td>SGST</td>
+      <td class="num">₹ {{ invoice.sgst_paise | paise }}</td>
+    </tr>
+    <tr>
+      <td>Round-off</td>
+      <td class="num">₹ {{ invoice.round_off_paise | paise }}</td>
+    </tr>
+    <tr class="grand">
+      <td>Grand Total</td>
+      <td class="num">₹ {{ invoice.total_paise | paise }}</td>
+    </tr>
+  </table>
+
+  <h2>Payment</h2>
+  <div>Payment Mode: {{ invoice.payment_mode }}</div>
+  {% if invoice.payment_reference %}
+  <div>Khata Customer: {{ invoice.payment_reference }}</div>
+  {% endif %}
+</body>
+</html>

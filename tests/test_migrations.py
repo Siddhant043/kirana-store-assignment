@@ -79,4 +79,13 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
 
     assert asyncio.run(assert_khata_tables_exist())
 
+    async def assert_shop_profile_table_exists() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            return await table_exists(engine, "shop_profile")
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_shop_profile_table_exists())
+
     command.upgrade(config, "head")
