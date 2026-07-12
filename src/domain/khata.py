@@ -57,6 +57,21 @@ class KhataBalanceResult:
 
 
 @dataclass(frozen=True)
+class CustomerBalanceRow:
+    customer_id: int
+    name: str
+    phone: str | None
+    balance_paise: int
+
+
+@dataclass(frozen=True)
+class ListCustomersAboveThresholdResult:
+    status: Literal["ok"]
+    threshold_paise: int
+    customers: list[CustomerBalanceRow]
+
+
+@dataclass(frozen=True)
 class RefusedResult:
     status: Literal["refused"]
     reason: str
@@ -246,6 +261,49 @@ class KhataService:
             customer_id=customer_id,
             name=customer.name,
             balance_paise=balance_paise,
+        )
+
+    async def list_customers_above_threshold(
+        self,
+        threshold_paise: int,
+    ) -> ListCustomersAboveThresholdResult | RefusedResult:
+        if threshold_paise < 0:
+            return RefusedResult(
+                status="refused",
+                reason="invalid_threshold_paise",
+                details={"threshold_paise": threshold_paise},
+            )
+
+        signed_amount = case(
+            (KhataEntry.entry_type == "charge", KhataEntry.amount_paise),
+            else_=-KhataEntry.amount_paise,
+        )
+        balance_expr = func.coalesce(func.sum(signed_amount), 0)
+        result = await self._session.execute(
+            select(
+                Customer.customer_id,
+                Customer.name,
+                Customer.phone,
+                balance_expr.label("balance_paise"),
+            )
+            .outerjoin(KhataEntry, KhataEntry.customer_id == Customer.customer_id)
+            .group_by(Customer.customer_id, Customer.name, Customer.phone)
+            .having(balance_expr >= threshold_paise)
+            .order_by(balance_expr.desc(), Customer.name.asc())
+        )
+        customers = [
+            CustomerBalanceRow(
+                customer_id=row.customer_id,
+                name=row.name,
+                phone=row.phone,
+                balance_paise=int(row.balance_paise),
+            )
+            for row in result.all()
+        ]
+        return ListCustomersAboveThresholdResult(
+            status="ok",
+            threshold_paise=threshold_paise,
+            customers=customers,
         )
 
     async def append_bill_charge(
