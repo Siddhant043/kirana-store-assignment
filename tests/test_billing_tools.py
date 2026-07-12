@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from src.db.models import Bill, DraftBill, Product, StockLedger
+from src.db.models import Bill, DraftBill, Product, StockBatch, StockLedger
 from src.db.session import create_session_factory
 from src.domain.billing import BillingService
 from src.domain.inventory import InventoryService
@@ -27,6 +27,23 @@ async def _set_product_quantity(
 ) -> None:
     product = await session.get(Product, product_id)
     assert product is not None
+    existing = (
+        await session.execute(
+            select(StockBatch).where(StockBatch.product_id == product_id)
+        )
+    ).scalars().all()
+    for batch in existing:
+        await session.delete(batch)
+    await session.flush()
+    if quantity > 0:
+        session.add(
+            StockBatch(
+                product_id=product_id,
+                batch_qty=quantity,
+                cost_price_paise=product.cost_price_paise,
+                expiry_date=None,
+            )
+        )
     product.quantity = quantity
     await session.flush()
 
@@ -76,7 +93,11 @@ async def test_finalize_multi_line_bill_decrements_stock(
     ledger_rows = (
         (
             await inventory_session.execute(
-                select(StockLedger).where(StockLedger.reason == "sale")
+                select(StockLedger).where(
+                    StockLedger.reason == "sale",
+                    StockLedger.product_id.in_([sugar_id, maggi_id]),
+                    StockLedger.ref_id == result.bill_id,
+                )
             )
         )
         .scalars()
@@ -166,6 +187,7 @@ async def test_finalize_below_cost_requires_confirmation(
     )
     inventory_session.add(product)
     await inventory_session.flush()
+    await _set_product_quantity(inventory_session, product.product_id, Decimal("5"))
 
     billing = BillingService(inventory_session, chat_id=1005)
     await billing.open_draft_bill()
@@ -233,5 +255,13 @@ async def test_concurrent_finalize_same_sku_never_negative(
         assert len(sale_rows) == 1
         assert sum((row.delta for row in sale_rows), Decimal("0")) == Decimal("-3")
 
-        bills = (await session.execute(select(Bill))).scalars().all()
+        bills = (
+            (
+                await session.execute(
+                    select(Bill).where(Bill.chat_id.in_([2001, 2002]))
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(bills) == 1

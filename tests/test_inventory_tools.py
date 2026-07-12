@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Product, StockLedger
+from src.db.models import Product, StockBatch, StockLedger
 from src.domain.inventory import InventoryService
 
 
@@ -78,13 +78,20 @@ async def test_receive_stock_updates_quantity_and_ledger(
     product = await inventory_session.get(Product, product_id)
     assert product is not None
     assert product.quantity == quantity_before + Decimal("50")
-    assert product.cost_price_paise == 1200
+    assert product.cost_price_paise == product_before.cost_price_paise
+
+    batch = await inventory_session.get(StockBatch, receive_result.batch_id)
+    assert batch is not None
+    assert batch.batch_qty == Decimal("50")
+    assert batch.cost_price_paise == 1200
+    assert batch.expiry_date is None
 
     ledger_row = await inventory_session.get(StockLedger, receive_result.ledger_id)
     assert ledger_row is not None
     assert ledger_row.delta == Decimal("50")
     assert ledger_row.balance_after == quantity_before + Decimal("50")
     assert ledger_row.reason == "stock_in"
+    assert ledger_row.ref_id == receive_result.batch_id
     assert receive_result.ledger_id == ledger_row.ledger_id
 
 
