@@ -39,6 +39,7 @@ KHATA_ALLOWED_TOOLS = [
 ANALYTICS_ALLOWED_TOOLS = [
     "mcp__analytics__daily_close",
     "mcp__analytics__weekly_sales_report",
+    "mcp__analytics__reorder_suggestions",
 ]
 
 DOCUMENTS_ALLOWED_TOOLS = [
