@@ -7,6 +7,14 @@ current_owner_user_id: ContextVar[int | None] = ContextVar(
     "current_owner_user_id",
     default=None,
 )
+current_photo_bytes: ContextVar[bytes | None] = ContextVar(
+    "current_photo_bytes",
+    default=None,
+)
+current_photo_media_type: ContextVar[str | None] = ContextVar(
+    "current_photo_media_type",
+    default=None,
+)
 
 
 def require_chat_id() -> int:

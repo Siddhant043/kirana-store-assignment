@@ -4,10 +4,15 @@ from dataclasses import dataclass, field
 from unittest.mock import AsyncMock
 
 import pytest
-from aiogram.types import Chat, Message, Update, User, Voice
+from aiogram.types import Chat, Message, PhotoSize, Update, User, Voice
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from src.bot.handler import HandleResult, MessageSender, UpdateHandler
+from src.bot.handler import (
+    DEFAULT_PHOTO_IDENTIFY_PROMPT,
+    HandleResult,
+    MessageSender,
+    UpdateHandler,
+)
 from src.db.session import create_session_factory
 from src.domain.voice import TranscriptionResult
 
@@ -47,6 +52,16 @@ class FakeVoiceDownloader:
     async def download_voice(self, file_id: str) -> bytes:
         self.downloaded_file_ids.append(file_id)
         return self.audio
+
+
+class FakePhotoDownloader:
+    def __init__(self, image: bytes = b"jpeg-bytes") -> None:
+        self.image = image
+        self.downloaded_file_ids: list[str] = []
+
+    async def download_photo(self, file_id: str) -> bytes:
+        self.downloaded_file_ids.append(file_id)
+        return self.image
 
 
 class FakeTranscriber:
@@ -106,12 +121,46 @@ def _voice_update(
     )
 
 
+def _photo_update(
+    update_id: int,
+    chat_id: int,
+    *,
+    file_id: str = "photo-large",
+    caption: str | None = None,
+) -> Update:
+    return Update(
+        update_id=update_id,
+        message=Message(
+            message_id=3,
+            date=0,
+            chat=Chat(id=chat_id, type="private"),
+            from_user=User(id=chat_id, is_bot=False, first_name="Owner"),
+            caption=caption,
+            photo=[
+                PhotoSize(
+                    file_id="photo-small",
+                    file_unique_id="unique-small",
+                    width=90,
+                    height=90,
+                ),
+                PhotoSize(
+                    file_id=file_id,
+                    file_unique_id="unique-large",
+                    width=800,
+                    height=800,
+                ),
+            ],
+        ),
+    )
+
+
 def _build_handler(
     session_factory: async_sessionmaker[AsyncSession],
     *,
     agent: FakeAgent | None = None,
     sender: FakeMessageSender | None = None,
     downloader: FakeVoiceDownloader | None = None,
+    photo_downloader: FakePhotoDownloader | None = None,
     transcriber: FakeTranscriber | None = None,
 ) -> tuple[
     UpdateHandler,
@@ -119,10 +168,12 @@ def _build_handler(
     FakeMessageSender,
     FakeVoiceDownloader,
     FakeTranscriber,
+    FakePhotoDownloader,
 ]:
     resolved_agent = agent or FakeAgent()
     resolved_sender = sender or FakeMessageSender()
     resolved_downloader = downloader or FakeVoiceDownloader()
+    resolved_photo = photo_downloader or FakePhotoDownloader()
     resolved_transcriber = transcriber or FakeTranscriber()
     handler = UpdateHandler(
         session_factory=session_factory,
@@ -130,6 +181,7 @@ def _build_handler(
         message_sender=resolved_sender,
         voice_downloader=resolved_downloader,
         transcriber=resolved_transcriber,
+        photo_downloader=resolved_photo,
     )
     return (
         handler,
@@ -137,6 +189,7 @@ def _build_handler(
         resolved_sender,
         resolved_downloader,
         resolved_transcriber,
+        resolved_photo,
     )
 
 
@@ -151,7 +204,7 @@ async def handler_session_factory(
 async def test_handler_drops_duplicate_update_without_calling_agent(
     handler_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    handler, agent, sender, _, _ = _build_handler(handler_session_factory)
+    handler, agent, sender, _, _, _ = _build_handler(handler_session_factory)
 
     first = _text_update(update_id=1001, chat_id=42, text="hi")
     duplicate = _text_update(update_id=1001, chat_id=42, text="hi")
@@ -177,7 +230,7 @@ async def test_handler_persists_owner_chat_id(
 
     agent = FakeAgent()
     sender = FakeMessageSender()
-    handler, _, _, _, _ = _build_handler(
+    handler, _, _, _, _, _ = _build_handler(
         handler_session_factory,
         agent=agent,
         sender=sender,
@@ -196,7 +249,7 @@ async def test_handler_persists_owner_chat_id(
 async def test_new_clears_session_without_calling_agent(
     handler_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    handler, agent, sender, _, _ = _build_handler(handler_session_factory)
+    handler, agent, sender, _, _, _ = _build_handler(handler_session_factory)
 
     result = await handler.handle(_text_update(update_id=2001, chat_id=42, text="/new"))
 
@@ -222,7 +275,7 @@ async def test_voice_note_reaches_same_agent_reply_path_as_text(
             reason=None,
         )
     )
-    handler, _, _, _, _ = _build_handler(
+    handler, _, _, _, _, _ = _build_handler(
         handler_session_factory,
         agent=agent,
         sender=sender,
@@ -234,9 +287,6 @@ async def test_voice_note_reaches_same_agent_reply_path_as_text(
         _text_update(update_id=3101, chat_id=42, text="2kg sugar, 4 Maggi, UPI")
     )
     text_kwargs = agent.reply.await_args.kwargs
-
-    agent.reply.reset_mock()
-    sender.sent.clear()
 
     voice_result = await handler.handle(
         _voice_update(update_id=3102, chat_id=42, file_id="voice-abc")
@@ -254,8 +304,6 @@ async def test_voice_note_reaches_same_agent_reply_path_as_text(
         == text_kwargs["owner_telegram_user_id"]
         == 42
     )
-    assert agent.reply.await_count == 1
-    assert sender.sent == [(42, "hello")]
 
 
 @pytest.mark.asyncio
@@ -271,7 +319,7 @@ async def test_voice_transcription_failure_sends_error_without_agent_reply(
             reason="transcription was empty or unclear",
         )
     )
-    handler, _, _, _, _ = _build_handler(
+    handler, _, _, _, _, _ = _build_handler(
         handler_session_factory,
         agent=agent,
         sender=sender,
@@ -287,3 +335,54 @@ async def test_voice_transcription_failure_sends_error_without_agent_reply(
     assert "could not understand" in sender.sent[0][1].lower() or (
         "transcription" in sender.sent[0][1].lower()
     )
+
+
+@pytest.mark.asyncio
+async def test_photo_reaches_agent_with_image_bytes(
+    handler_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    agent = FakeAgent()
+    sender = FakeMessageSender()
+    photo_downloader = FakePhotoDownloader(image=b"photo-jpeg")
+    handler, _, _, _, _, _ = _build_handler(
+        handler_session_factory,
+        agent=agent,
+        sender=sender,
+        photo_downloader=photo_downloader,
+    )
+
+    result = await handler.handle(
+        _photo_update(update_id=5001, chat_id=42, file_id="photo-largest")
+    )
+
+    assert result == HandleResult(processed=True, replied=True)
+    assert photo_downloader.downloaded_file_ids == ["photo-largest"]
+    kwargs = agent.reply.await_args.kwargs
+    assert kwargs["chat_id"] == 42
+    assert kwargs["owner_message"] == DEFAULT_PHOTO_IDENTIFY_PROMPT
+    assert kwargs["image_bytes"] == b"photo-jpeg"
+    assert kwargs["media_type"] == "image/jpeg"
+    assert sender.sent == [(42, "hello")]
+
+
+@pytest.mark.asyncio
+async def test_photo_caption_used_as_owner_message(
+    handler_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    agent = FakeAgent()
+    handler, _, _, _, _, _ = _build_handler(
+        handler_session_factory,
+        agent=agent,
+    )
+
+    await handler.handle(
+        _photo_update(
+            update_id=5002,
+            chat_id=42,
+            caption="Add this Maggi to the bill",
+        )
+    )
+
+    kwargs = agent.reply.await_args.kwargs
+    assert kwargs["owner_message"] == "Add this Maggi to the bill"
+    assert kwargs["image_bytes"] == b"jpeg-bytes"

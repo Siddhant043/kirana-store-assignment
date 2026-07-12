@@ -9,6 +9,7 @@ RUN apt-get update \
         libgdk-pixbuf-2.0-0 \
         libffi-dev \
         shared-mime-info \
+        libzbar0 \
         fonts-noto-core \
         fonts-noto-ui-core \
         fonts-noto-cjk \

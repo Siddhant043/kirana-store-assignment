@@ -17,6 +17,8 @@ from src.tools.preferences_tools import (
 
 INVENTORY_ALLOWED_TOOLS = [
     "mcp__inventory__find_product",
+    "mcp__inventory__scan_barcode",
+    "mcp__inventory__prepare_photo_product",
     "mcp__inventory__add_product",
     "mcp__inventory__receive_stock",
     "mcp__inventory__get_stock",

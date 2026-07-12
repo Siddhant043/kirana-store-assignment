@@ -18,6 +18,12 @@ VOICE_TRANSCRIPTION_FAILURE_MESSAGE = (
     "Please try again, or type the order as text."
 )
 
+DEFAULT_PHOTO_IDENTIFY_PROMPT = (
+    "Identify this product from the photo. "
+    "Try scan_barcode first; if no barcode, use vision then find_product "
+    "and prepare_photo_product before add_line."
+)
+
 
 class MessageSender(Protocol):
     async def send_text(self, chat_id: int, text: str) -> None: ...
@@ -35,6 +41,10 @@ class VoiceAudioDownloader(Protocol):
     async def download_voice(self, file_id: str) -> bytes: ...
 
 
+class PhotoDownloader(Protocol):
+    async def download_photo(self, file_id: str) -> bytes: ...
+
+
 @dataclass(frozen=True)
 class HandleResult:
     processed: bool
@@ -49,12 +59,14 @@ class UpdateHandler:
         message_sender: MessageSender,
         voice_downloader: VoiceAudioDownloader,
         transcriber: VoiceTranscriber,
+        photo_downloader: PhotoDownloader,
     ) -> None:
         self._session_factory = session_factory
         self._agent = agent
         self._message_sender = message_sender
         self._voice_downloader = voice_downloader
         self._transcriber = transcriber
+        self._photo_downloader = photo_downloader
 
     async def handle(self, update: Update) -> HandleResult:
         if update.update_id is None:
@@ -63,7 +75,8 @@ class UpdateHandler:
         message = update.message
         if message is None or message.chat is None:
             return HandleResult(processed=False, replied=False)
-        if message.text is None and message.voice is None:
+        has_photo = bool(message.photo)
+        if message.text is None and message.voice is None and not has_photo:
             return HandleResult(processed=False, replied=False)
 
         async with session_scope(self._session_factory) as session:
@@ -85,7 +98,15 @@ class UpdateHandler:
             )
 
         owner_message: str
-        if message.voice is not None:
+        image_bytes: bytes | None = None
+        media_type = "image/jpeg"
+
+        if has_photo and message.photo is not None:
+            largest = message.photo[-1]
+            image_bytes = await self._photo_downloader.download_photo(largest.file_id)
+            caption = (message.caption or "").strip()
+            owner_message = caption or DEFAULT_PHOTO_IDENTIFY_PROMPT
+        elif message.voice is not None:
             audio_bytes = await self._voice_downloader.download_voice(
                 message.voice.file_id
             )
@@ -98,7 +119,6 @@ class UpdateHandler:
                 return HandleResult(processed=True, replied=True)
             owner_message = transcription.text
         else:
-            # Text path: early guard requires text or voice.
             owner_message = message.text or ""
 
         if owner_message.strip().lower() == "/new":
@@ -116,6 +136,8 @@ class UpdateHandler:
             chat_id=message.chat.id,
             owner_message=owner_message,
             owner_telegram_user_id=owner_telegram_user_id,
+            image_bytes=image_bytes,
+            media_type=media_type,
         )
         await self._message_sender.send_text(
             chat_id=message.chat.id,
@@ -166,6 +188,25 @@ class TelegramVoiceDownloader:
         file = await self._bot.get_file(file_id)
         if file.file_path is None:
             msg = "Telegram voice file path is missing"
+            raise ValueError(msg)
+        buffer = BytesIO()
+        await self._bot.download_file(file.file_path, destination=buffer)
+        return buffer.getvalue()
+
+
+class TelegramPhotoDownloader:
+    def __init__(self, bot: object) -> None:
+        self._bot = bot
+
+    async def download_photo(self, file_id: str) -> bytes:
+        from aiogram import Bot
+
+        if not isinstance(self._bot, Bot):
+            msg = "TelegramPhotoDownloader requires an aiogram Bot"
+            raise TypeError(msg)
+        file = await self._bot.get_file(file_id)
+        if file.file_path is None:
+            msg = "Telegram photo file path is missing"
             raise ValueError(msg)
         buffer = BytesIO()
         await self._bot.download_file(file.file_path, destination=buffer)

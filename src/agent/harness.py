@@ -1,5 +1,8 @@
 """Claude Agent SDK harness for owner messages."""
 
+from __future__ import annotations
+
+import base64
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Protocol
@@ -13,7 +16,12 @@ from claude_agent_sdk import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.bot.context import current_chat_id, current_owner_user_id
+from src.bot.context import (
+    current_chat_id,
+    current_owner_user_id,
+    current_photo_bytes,
+    current_photo_media_type,
+)
 from src.db.models import Product
 from src.domain.preferences import (
     DEFAULT_PAYMENT_MODE_KEY,
@@ -121,6 +129,8 @@ class AgentHarness(Protocol):
         owner_message: str,
         *,
         owner_telegram_user_id: int | None = None,
+        image_bytes: bytes | None = None,
+        media_type: str = "image/jpeg",
     ) -> str: ...
 
     def clear_session(self, chat_id: int) -> None: ...
@@ -154,6 +164,8 @@ class ClaudeAgentHarness:
         owner_message: str,
         *,
         owner_telegram_user_id: int | None = None,
+        image_bytes: bytes | None = None,
+        media_type: str = "image/jpeg",
     ) -> str:
         owner_id = (
             owner_telegram_user_id if owner_telegram_user_id is not None else chat_id
@@ -172,9 +184,18 @@ class ClaudeAgentHarness:
 
         chat_token = current_chat_id.set(chat_id)
         owner_token = current_owner_user_id.set(owner_id)
+        photo_token = current_photo_bytes.set(image_bytes)
+        media_token = current_photo_media_type.set(
+            media_type if image_bytes is not None else None
+        )
         try:
             reply_text = ""
-            async for message in self._stream_messages(owner_message, options):
+            async for message in self._stream_messages(
+                owner_message,
+                options,
+                image_bytes=image_bytes,
+                media_type=media_type,
+            ):
                 if (
                     hasattr(message, "subtype")
                     and getattr(message, "subtype", None) == "init"
@@ -190,6 +211,8 @@ class ClaudeAgentHarness:
 
             return reply_text or "I could not generate a reply."
         finally:
+            current_photo_media_type.reset(media_token)
+            current_photo_bytes.reset(photo_token)
             current_owner_user_id.reset(owner_token)
             current_chat_id.reset(chat_token)
 
@@ -207,9 +230,49 @@ class ClaudeAgentHarness:
         self,
         owner_message: str,
         options: ClaudeAgentOptions,
+        *,
+        image_bytes: bytes | None = None,
+        media_type: str = "image/jpeg",
     ) -> AsyncIterator[object]:
-        async for message in query(prompt=owner_message, options=options):
+        if image_bytes is None:
+            async for message in query(prompt=owner_message, options=options):
+                yield message
+            return
+
+        prompt = _multimodal_user_prompt(owner_message, image_bytes, media_type)
+        async for message in query(prompt=prompt, options=options):
             yield message
+
+
+def _multimodal_user_prompt(
+    owner_message: str,
+    image_bytes: bytes,
+    media_type: str,
+) -> AsyncIterator[dict[str, Any]]:
+    encoded = base64.standard_b64encode(image_bytes).decode("ascii")
+
+    async def _one_shot() -> AsyncIterator[dict[str, Any]]:
+        yield {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": owner_message},
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": encoded,
+                        },
+                    },
+                ],
+            },
+            "parent_tool_use_id": None,
+            "session_id": "default",
+        }
+
+    return _one_shot()
 
 
 def _text_from_assistant(message: AssistantMessage) -> str:

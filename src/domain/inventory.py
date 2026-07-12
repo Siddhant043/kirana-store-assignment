@@ -98,6 +98,33 @@ class ListExpiringSoonResult:
     batches: list[ExpiringBatch]
 
 
+@dataclass(frozen=True)
+class PreparePhotoProductOkResult:
+    status: Literal["ok"]
+    product_id: int
+    name: str
+    brand: str | None
+    mrp_paise: int
+    confirmed: Literal[True]
+
+
+@dataclass(frozen=True)
+class PreparePhotoProductRequiresConfirmation:
+    status: Literal["requires_confirmation"]
+    reason: Literal["photo_vision_confirm"]
+    product_id: int
+    name: str
+    brand: str | None
+    mrp_paise: int
+
+
+@dataclass(frozen=True)
+class PreparePhotoProductRefusedResult:
+    status: Literal["refused"]
+    reason: str
+    details: dict[str, object]
+
+
 class ProductNotFoundError(Exception):
     pass
 
@@ -221,6 +248,37 @@ class InventoryService:
             ambiguous=ambiguous,
         )
 
+    async def find_product_by_barcode(self, barcode: str) -> FindProductResult:
+        normalized = barcode.strip()
+        if not normalized:
+            return FindProductResult(status="refused", candidates=[], ambiguous=False)
+
+        result = await self._session.execute(
+            select(Product).where(Product.barcode == normalized)
+        )
+        product = result.scalar_one_or_none()
+        if product is None:
+            return FindProductResult(status="refused", candidates=[], ambiguous=False)
+
+        candidate = ProductCandidate(
+            product_id=product.product_id,
+            name=product.name,
+            brand=product.brand,
+            mrp_paise=product.mrp_paise,
+            cost_price_paise=product.cost_price_paise,
+            gst_slab=product.gst_slab,
+            hsn_code=product.hsn_code,
+            unit_type=product.unit_type,
+            quantity=str(product.quantity),
+            reorder_level=str(product.reorder_level),
+            match_score=1.0,
+        )
+        return FindProductResult(
+            status="ok",
+            candidates=[candidate],
+            ambiguous=False,
+        )
+
     async def receive_stock(
         self,
         *,
@@ -337,6 +395,44 @@ class InventoryService:
             batches=batches,
         )
 
+    async def prepare_photo_product(
+        self,
+        product_id: int,
+        *,
+        confirm: bool = False,
+    ) -> (
+        PreparePhotoProductOkResult
+        | PreparePhotoProductRequiresConfirmation
+        | PreparePhotoProductRefusedResult
+    ):
+        try:
+            product = await self._get_product(product_id)
+        except ProductNotFoundError:
+            return PreparePhotoProductRefusedResult(
+                status="refused",
+                reason="product_not_found",
+                details={"product_id": product_id},
+            )
+
+        if not confirm:
+            return PreparePhotoProductRequiresConfirmation(
+                status="requires_confirmation",
+                reason="photo_vision_confirm",
+                product_id=product.product_id,
+                name=product.name,
+                brand=product.brand,
+                mrp_paise=product.mrp_paise,
+            )
+
+        return PreparePhotoProductOkResult(
+            status="ok",
+            product_id=product.product_id,
+            name=product.name,
+            brand=product.brand,
+            mrp_paise=product.mrp_paise,
+            confirmed=True,
+        )
+
     async def _reconcile_product_quantity(self, product: Product) -> Decimal:
         result = await self._session.execute(
             select(func.coalesce(func.sum(StockBatch.batch_qty), 0)).where(
@@ -410,3 +506,13 @@ def serialize_list_expiring_soon_result(
         "as_of_date": result.as_of_date,
         "batches": [asdict(batch) for batch in result.batches],
     }
+
+
+def serialize_prepare_photo_product_result(
+    result: (
+        PreparePhotoProductOkResult
+        | PreparePhotoProductRequiresConfirmation
+        | PreparePhotoProductRefusedResult
+    ),
+) -> dict[str, object]:
+    return asdict(result)
