@@ -11,6 +11,7 @@ dependencies = [
     "claude-agent-sdk>=0.1",
     "jinja2>=3.1.6",
     "pydantic-settings>=2.8",
+    "python-pptx>=1.0.2",
     "sqlalchemy[asyncio]>=2.0",
     "weasyprint>=69.0",
 ]

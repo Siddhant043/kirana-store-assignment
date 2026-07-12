@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from weasyprint import HTML  # type: ignore[import-untyped]
 
 from src.db.models import Bill, BillLine, Customer, KhataEntry, Product
+from src.domain.doc_gen import run_cpu_bound
 from src.domain.shop_profile import ShopProfileMissingResult, ShopProfileService
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -175,7 +176,7 @@ class InvoiceService:
             shop_gstin=shop_result.gstin,
             payment_reference=payment_reference,
         )
-        pdf_bytes = render_invoice_pdf(invoice_view)
+        pdf_bytes = await run_cpu_bound(render_invoice_pdf, invoice_view)
         filename = f"{bill.invoice_number}.pdf"
         return InvoicePdfResult(
             status="ok",
