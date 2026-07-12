@@ -2,12 +2,14 @@
 
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import Bill, BillLine, Product
+from src.domain.inventory import InventoryService
 from src.domain.shop_time import (
     rolling_last_n_ist_days,
     today_ist,
@@ -16,6 +18,7 @@ from src.domain.shop_time import (
 )
 
 TOP_ITEMS_LIMIT = 10
+REORDER_VELOCITY_WINDOW_DAYS = 7
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,28 @@ class WeeklySalesReportResult:
     round_off_paise: int
     payment_mode_split: PaymentModeSplit
     top_items: list[TopItem]
+
+
+@dataclass(frozen=True)
+class ReorderSuggestion:
+    product_id: int
+    name: str
+    quantity: str
+    reorder_level: str
+    unit_type: str
+    sold_quantity_in_window: str
+    daily_velocity: str | None
+    days_of_stock: str | None
+    basis: Literal["sales_velocity", "reorder_level"]
+    window_day_count: int
+
+
+@dataclass(frozen=True)
+class ReorderSuggestionsResult:
+    status: Literal["ok"]
+    window_start: str
+    window_end: str
+    suggestions: list[ReorderSuggestion]
 
 
 class AnalyticsService:
@@ -244,6 +269,83 @@ class AnalyticsService:
             for row in result.all()
         ]
 
+    async def reorder_suggestions(self) -> ReorderSuggestionsResult:
+        """Rank Products below Reorder Level by estimated days of stock remaining."""
+        window_day_count = REORDER_VELOCITY_WINDOW_DAYS
+        period_start, period_end = rolling_last_n_ist_days(window_day_count)
+        start_utc, end_utc = utc_bounds_for_ist_range(period_start, period_end)
+
+        low_stock = await InventoryService(self._session).list_low_stock()
+        sold_by_product = await self._sold_quantity_by_product(start_utc, end_utc)
+
+        suggestions: list[ReorderSuggestion] = []
+        for product in low_stock.products:
+            sold_qty = sold_by_product.get(product.product_id, Decimal("0"))
+            current_qty = Decimal(product.quantity)
+            if sold_qty > 0:
+                daily_velocity = sold_qty / Decimal(window_day_count)
+                days_of_stock: str | None = str(current_qty / daily_velocity)
+                daily_velocity_str: str | None = str(daily_velocity)
+                basis: Literal["sales_velocity", "reorder_level"] = "sales_velocity"
+                sold_quantity_in_window = str(sold_qty)
+            else:
+                daily_velocity_str = None
+                days_of_stock = None
+                basis = "reorder_level"
+                sold_quantity_in_window = "0"
+            suggestions.append(
+                ReorderSuggestion(
+                    product_id=product.product_id,
+                    name=product.name,
+                    quantity=product.quantity,
+                    reorder_level=product.reorder_level,
+                    unit_type=product.unit_type,
+                    sold_quantity_in_window=sold_quantity_in_window,
+                    daily_velocity=daily_velocity_str,
+                    days_of_stock=days_of_stock,
+                    basis=basis,
+                    window_day_count=window_day_count,
+                )
+            )
+
+        suggestions.sort(
+            key=lambda item: (
+                0 if item.days_of_stock is not None else 1,
+                Decimal(item.days_of_stock)
+                if item.days_of_stock is not None
+                else Decimal("0"),
+                item.product_id,
+            )
+        )
+        return ReorderSuggestionsResult(
+            status="ok",
+            window_start=period_start.isoformat(),
+            window_end=period_end.isoformat(),
+            suggestions=suggestions,
+        )
+
+    async def _sold_quantity_by_product(
+        self,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> dict[int, Decimal]:
+        result = await self._session.execute(
+            select(
+                BillLine.product_id,
+                func.sum(BillLine.quantity).label("quantity"),
+            )
+            .join(Bill, Bill.bill_id == BillLine.bill_id)
+            .join(Product, Product.product_id == BillLine.product_id)
+            .where(
+                Bill.finalized_at >= start_utc,
+                Bill.finalized_at < end_utc,
+            )
+            .group_by(BillLine.product_id)
+        )
+        return {
+            int(row.product_id): Decimal(str(row.quantity)) for row in result.all()
+        }
+
     async def _build_report(
         self,
         start_utc: datetime,
@@ -357,3 +459,14 @@ def serialize_weekly_sales_report_result(
     payload["payment_mode_split"] = asdict(result.payment_mode_split)
     payload["top_items"] = [asdict(item) for item in result.top_items]
     return payload
+
+
+def serialize_reorder_suggestions_result(
+    result: ReorderSuggestionsResult,
+) -> dict[str, object]:
+    return {
+        "status": result.status,
+        "window_start": result.window_start,
+        "window_end": result.window_end,
+        "suggestions": [asdict(item) for item in result.suggestions],
+    }
