@@ -178,17 +178,21 @@ def build_billing_tools(
         {
             "payment_mode": str,
             "confirm_below_cost": bool,
+            "customer_id": int,
         },
     )
     async def finalize_bill_tool(args: dict[str, Any]) -> dict[str, Any]:
         chat_id = require_chat_id()
         confirm_below_cost = bool(args.get("confirm_below_cost", False))
+        customer_id = args.get("customer_id")
+        parsed_customer_id = int(customer_id) if customer_id is not None else None
         async with session_factory() as session:
             async with session.begin():
                 service = BillingService(session, chat_id)
                 result = await service.finalize_bill(
                     str(args["payment_mode"]).lower(),
                     confirm_below_cost=confirm_below_cost,
+                    customer_id=parsed_customer_id,
                 )
                 is_error = isinstance(result, RefusedResult)
                 return _tool_response(

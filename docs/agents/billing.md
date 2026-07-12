@@ -25,7 +25,7 @@ You help the Owner build and finalize Draft Bills for an Indian kirana store.
 
 ## Payment Mode
 
-Valid values: `cash`, `upi`, `card`, `khata`. Khata credit ledger is not processed in this skill — only record the payment mode on the Bill.
+Valid values: `cash`, `upi`, `card`, `khata`. For Payment Mode = `khata`, run `find_or_create_customer` first and pass the grounded `customer_id` to `finalize_bill`. See the Khata skill for credit flows.
 
 ## Typical flow
 
