@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from alembic import command
 from src.db.session import create_engine
-from tests.conftest import table_exists, view_exists
+from tests.conftest import column_exists, table_exists, view_exists
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -107,5 +107,16 @@ def test_alembic_upgrade_creates_processed_updates_from_empty(
             await engine.dispose()
 
     assert asyncio.run(assert_preferences_table_exists())
+
+    async def assert_shop_branding_columns_exist() -> bool:
+        engine = create_engine(migration_postgres_url)
+        try:
+            logo = await column_exists(engine, "shop_profile", "logo_url")
+            accent = await column_exists(engine, "shop_profile", "accent_color")
+            return logo and accent
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(assert_shop_branding_columns_exist())
 
     command.upgrade(config, "head")
