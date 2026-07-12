@@ -1,6 +1,7 @@
 # Kiranawala
 
-**Bot: [@Kiranawala_bot](https://t.me/Kiranawala_bot)**
+**Bot: [@Kiranawala_bot](https://t.me/Kiranawala_bot)**  
+**Demo video:** [Google Drive](https://drive.google.com/file/d/1eosIJEk_uvob3psICtItBrQIfbZTtL1U/view?usp=sharing)
 
 Telegram is the only UI. An Indian kirana owner stocks shelves, builds GST bills,
 runs khata, and pulls PDF invoices / PPTX decks by chatting in plain language —
@@ -228,6 +229,8 @@ uv run pytest
 ---
 
 ## Walkthrough
+
+Recorded walkthrough: [demo video](https://drive.google.com/file/d/1eosIJEk_uvob3psICtItBrQIfbZTtL1U/view?usp=sharing).
 
 Useful order for a live demo:
 
